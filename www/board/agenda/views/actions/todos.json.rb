@@ -10,6 +10,20 @@ agenda = "board_agenda_#{date}.txt"
 victims = Dir["#{TLPREQ}/victims-#{date}.*.txt"].
   map {|name| File.read(name.untaint).lines().map(&:chomp)}.flatten
 
+# fetch minutes
+@minutes = agenda.sub('_agenda_', '_minutes_')
+minutes_file = "#{AGENDA_WORK}/#{@minutes.sub('.txt', '.yml')}"
+minutes_file.untaint if @minutes =~ /^board_minutes_\d+_\d+_\d+\.txt$/
+
+if File.exist? minutes_file
+  minutes = YAML.load_file(minutes_file) || {}
+else
+  minutes = {}
+end
+
+minutes[:todos] ||= {}
+todos = minutes[:todos].dup
+
 ########################################################################
 #                               Actions                                #
 ########################################################################
@@ -23,6 +37,9 @@ if @remove and env.password
   ASF::LDAP.bind(env.user, env.password) do
     chairs.remove people
   end
+
+  minutes[:todos][:removed] ||= []
+  minutes[:todos][:removed] += people.map {|person| person.id}
 end
 
 if @add and env.password
@@ -34,25 +51,64 @@ if @add and env.password
   ASF::LDAP.bind(env.user, env.password) do
     chairs.add people
   end
+
+  minutes[:todos][:added] ||= []
+  minutes[:todos][:added] += people.map {|person| person.id}
 end
 
 if @establish and env.password
   establish = @establish.select {|title, checked| checked}.map(&:first)
 
+  # common to all establish resolutions
+  chairs = ASF::Service.find('pmc-chairs')
+  cinfo = "#{ASF::SVN['private/committers/board']}/committee-info.txt"
+  established = Date.parse(date.gsub('_', '-'))
+
+  # update LDAP, committee-info.txt
+  establish.each do |pmc|
+    resolution = Agenda.parse(agenda, :full).find do |item| 
+      item['title'] == "Establish #{pmc}"
+    end
+
+    chair = ASF::Person.find(resolution['chair'])
+    members = resolution['people'].map {|id, hash| ASF::Person.find(id)}
+    people = resolution['people'].map {|id, hash| [id, hash[:name]]}
+
+    ASF::SVN.update cinfo, resolution['title'], env, _ do |tmpdir, contents|
+      ASF::Committee.establish(contents, pmc, established, people)
+    end
+
+    ASF::LDAP.bind(env.user, env.password) do
+      chairs.add [chair] unless chairs.members.include? chair
+      ASF::Group.add(pmc.downcase, members)
+      ASF::Committee.add(pmc.downcase, members)
+    end 
+  end
+
+  # create 'victims' file for legacy tlpreq tool
   Dir.chdir TLPREQ do
     count = Dir["victims-#{date}.*.txt"].length
     filename = "victims-#{date}.#{count}.txt"
     contents = establish.join("\n") + "\n"
     File.write filename, contents
     system "svn add #{filename}"
-    system "svn commit --username #{env.user} --password #{env.password} " +
-      "#{filename} -m 'record #{date} approved TLP resolutions'"
-    if $? == 0
+    rc = system ['svn', 'commit', 
+      ['--username', env.user, '--password', env.password],
+      filename, '-m', 'record #{date} approved TLP resolutions']
+    if rc == 0
       victims += establish
     else
       system "svn rm --force #{filename}"
     end
   end
+
+  minutes[:todos][:established] ||= []
+  minutes[:todos][:established] += establish
+end
+
+unless todos == minutes[:todos]
+  File.write minutes_file, YAML.dump(minutes)
+  IPC.post type: :minutes, agenda: @agenda, value: minutes
 end
 
 ########################################################################
@@ -90,3 +146,4 @@ _establish establish.
   map {|name, resolution| {name: name, resolution: resolution}}
 _terminate terminate.
   map {|name, resolution| {name: name, resolution: resolution}}
+_minutes minutes

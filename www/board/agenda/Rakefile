@@ -1,3 +1,5 @@
+$LOAD_PATH.unshift File.expand_path('../../../../lib', __FILE__)
+
 require 'whimsy/asf/config'
 
 require 'rspec/core/rake_task'
@@ -5,6 +7,19 @@ RSpec::Core::RakeTask.new(:spec)
 task :default => :spec
 task :spec => 'test:setup'
 task :test => :spec
+
+# setup authentication
+task :auth do
+  require 'etc'
+  require 'io/console'
+  require 'base64'
+
+  user = ENV['USER'] || ETC.getlogin
+  STDOUT.write "Enter password for #{user}: "
+  password = STDIN.noecho(&:gets).chomp
+  ENV['HTTP_AUTHORIZATION'] = "Basic #{Base64.encode64("#{user}:#{password}")}"
+  STDOUT.puts
+end
 
 task :server => [:bundle, :listen] do
   ENV['RACK_ENV']='development'
@@ -22,6 +37,10 @@ end
 
 task "touch" do
   sh 'touch', File.expand_path('../tmp/restart.txt', __FILE__)
+end
+
+file 'node_modules' do
+  sh 'npm install'
 end
 
 file 'test/work' do
@@ -81,7 +100,7 @@ task :work => ['test/work/board',
   *testfiles.map {|testfile| "test/work/data/#{testfile}.yml"}]
 
 namespace :test do
-  task :setup => [:reset, :work]
+  task :setup => [:reset, :work, 'node_modules']
   task :server => 'server:test'
 
   task :stress => :setup do

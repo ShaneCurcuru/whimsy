@@ -3,6 +3,10 @@
 
   infrastructure-puppet:
     url: infrastructure-puppet.git
+    branch: deployment
+
+  letsencrypt:
+    url: https://github.com/letsencrypt/letsencrypt
 
 :svn:
 
@@ -16,9 +20,8 @@
     url: infra/infrastructure/apmail/trunk/bin
     depth: files
 
-  authorization:
-    url: infra/infrastructure/trunk/subversion/authorization
-    depth: files
+  attic-xdocs:
+    url: asf/attic/site/xdocs/projects
 
   board:
     url: private/committers/board
@@ -38,8 +41,8 @@
     url: asf/incubator/public/trunk/content
     depth: files
 
-  incubator_site_author:
-    url: http://svn.apache.org/repos/asf/incubator/public/trunk/content
+  member_apps:
+    url: private/documents/member_apps
 
   minutes:
     url: asf/infrastructure/site/trunk/content/foundation/records/minutes
@@ -66,6 +69,9 @@
   sponsorship:
     url: private/foundation/Fundraising/sponsorship
     depth: files
+
+  steve:
+    url: asf/steve/trunk
 
   templates:
     url: asf/infrastructure/site/trunk/templates

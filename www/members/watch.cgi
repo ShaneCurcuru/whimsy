@@ -1,10 +1,8 @@
-#!/usr/bin/ruby1.9.1
+#!/usr/bin/env ruby
 $LOAD_PATH.unshift File.realpath(File.expand_path('../../../lib', __FILE__))
 
 require 'wunderbar'
 require 'whimsy/asf'
-require 'whimsy/asf/podlings'
-require 'whimsy/asf/site'
 require 'nokogiri'
 require 'date'
 
@@ -14,7 +12,7 @@ meetings = ASF::SVN['private/foundation/Meetings']
 _html do
   _head_ do
     _title 'Potential Member Watch'
-    _base href: File.basename(ENV['SCRIPT_NAME'])
+    _base href: File.dirname(ENV['SCRIPT_NAME'])
     _style %{
       th {border-bottom: solid black}
       table {border-spacing: 1em 0.2em }
@@ -72,8 +70,12 @@ _html do
       list = watch_list
     end
 
-    # for efficiency, preload public_names
-    ASF::Person.preload('cn', list)
+    # for efficiency, preload committees, public_names, member status, and
+    # nominees
+    committees = ASF::Committee.preload
+    people = ASF::Person.preload('cn', list)
+    members = ASF::Member.status
+    nominees = ASF::Person.member_nominees
 
     _table do
 
@@ -148,10 +150,10 @@ _html do
               _td
             elsif person.asf_member?
               _td! do
-                _strong {_a person.id, href: "/roster/committer/#{person.id}"}
+                _strong {_a person.id, href: "roster/committer/#{person.id}"}
               end
             else
-              _td! {_a person.id, href: "/roster/committer/#{person.id}"}
+              _td! {_a person.id, href: "roster/committer/#{person.id}"}
             end
 
             # public name
@@ -164,10 +166,10 @@ _html do
                 person.committees.sort_by(&:name).each do |committee|
                   if committee.chair == person
                     _strong do
-                      _a committee.name, href: "../../roster/committee/#{committee.name}"
+                      _a committee.name, href: "roster/committee/#{committee.name}"
                     end
                   else
-                    _a committee.name, href: "../../roster/committee/#{committee.name}"
+                    _a committee.name, href: "roster/committee/#{committee.name}"
                   end
                 end
               end
@@ -200,7 +202,7 @@ _html do
     
                 date = 'unknown'
                 if minutes
-                  minutes = '../../board/minutes/' + File.basename(minutes)
+                  minutes = 'board/minutes/' + File.basename(minutes)
                 end
                 if resolution
                   minutes += '#' + resolution.at('a')['id']
@@ -230,30 +232,44 @@ _html do
 
     _h2_ 'Related Links'
     _ul do
-      unless request =~ /appstatus/
+      if Time.new.strftime('%Y%m%d') < File.basename(meeting)
         _li do
-          _a 'Application Status', href: 'watch/appstatus'
+          _a 'Posted nominations vs svn', href: 'members/nominations'
+        end
+      else
+        unless request =~ /appstatus/
+          _li do
+            _a 'Application Status', href: 'members/watch/appstatus'
+          end
         end
       end
+
       unless list == watch_list
         _li do
-          _a 'Potential Member Watch List', href: 'watch'
+          _a 'Potential Member Watch List', href: 'members/watch'
         end
       end
+
       unless request =~ /nominees/
         _li do
-          _a 'Nominees', href: 'watch/nominees'
+          _a 'Nominees', href: 'members/watch/nominees'
         end
       end
+
       unless request =~ /multiple/
         _li do
-          _a 'Active in Multiple (>=3) PMCs', href: 'watch/multiple'
+          _a 'Active in Multiple (>=3) PMCs', href: 'members/watch/multiple'
         end
       end
+
       unless request =~ /chairs/
         _li do
-          _a 'Non-member PMC chairs', href: 'watch/chairs'
+          _a 'Non-member PMC chairs', href: 'members/watch/chairs'
         end
+      end
+
+      _li do
+        _a 'PMCs with no members', href: 'members/memberless-pmcs'
       end
     end
 

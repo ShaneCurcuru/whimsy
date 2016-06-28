@@ -7,22 +7,53 @@
 # Status updates: https://whimsy-test.apache.org/status/
 #
 
-require 'bundler/setup'
-
+$LOAD_PATH.unshift File.realpath(File.expand_path('../../../lib', __FILE__))
 require 'whimsy/asf'
 require 'json'
 
 require 'open3'
-
 require 'wunderbar'
-Wunderbar.log_level = 'info' # Temporary for testing
+
+Wunderbar.log_level = 'info' unless Wunderbar.logger.info? # try not to override CLI flags
+
+# Add datestamp to log messages (progname is not needed as each prog has its own logfile)
+Wunderbar.logger.formatter = proc { |severity, datetime, progname, msg|
+      "_#{severity} #{datetime} #{msg}\n"
+    }
 
 # Allow diff output to be suppressed
 @noDiff = ARGV.delete '--nodiff'
 
 GITINFO = ASF.library_gitinfo rescue '?'
 
+class ChangeStatus
+  UNCHANGED = :unchanged
+  CHANGED   = :changed
+  NEW       = :new
+end
 
+def changed?
+  return @changed == ChangeStatus::CHANGED
+end
+
+def unchanged?
+  return @changed == ChangeStatus::UNCHANGED
+end
+
+def new?
+  return @changed == ChangeStatus::NEW
+end
+
+# Pretty-prints the JSON input and writes it to the output.
+# If the output is not STDOUT, then it is checked to see
+# if it has changed. If not, the output file is not touched.
+# If it has changed, the file is rewritten, and the diffs
+# are obtained and written to STDOUT.
+# The method logs whether the output file has been created/updated
+# or is unchanged.
+# No log messages are generated if no output file was specified.
+# Params:
+# +info+:: JSON hash to be written
 def public_json_output(info)
   # format as JSON
   results = JSON.pretty_generate(info)
@@ -50,12 +81,50 @@ def public_json_output_file(info, file)
 
 end
 
+def sendMail(subject, body)
+  if `hostname`.include? 'vm2'
+    Wunderbar.info "Detected vm2, not sending mail: #{subject}"
+    return
+  end
+  begin
+    require 'mail'
+    ASF::Mail.configure
+    ldaphost = ASF::LDAP.host()
+    mail = Mail.new do
+      from 'Public JSON file updates  <dev@whimsical.apache.org>'
+      to 'Notification List <notifications@whimsical.apache.org>'
+      subject subject
+      body body
+    end
+    # in spite of what the docs say, this does not seem to work in the body above
+    mail.charset = 'utf-8'
+    # Replace .mail suffix with more accurate one
+    mail.message_id = "<#{Mail.random_tag}@#{::Socket.gethostname}.apache.org>"
+    # deliver mail
+    mail.deliver!
+  rescue => e
+    Wunderbar.warn "sendMail [#{subject}] failed with exception: #{e}"
+  end
+end
+
+# Massage the strings to drop the timestamps so spurious changes are not reported/saved
+def removeTimestamps(s)
+  # Drop the first occurrences only (but drop both)
+  return s.sub(/  "last_updated": "[^"]+",/, '').sub(/  "code_version": "[^"]+",/, '')
+end
+
 # Write formatted output to specific file
 def write_output(file, results)
 
-  if not File.exist?(file) or File.read(file).chomp != results
+  if not File.exist?(file) or removeTimestamps(File.read(file).chomp) != removeTimestamps(results)
 
-    puts "_INFO git_info: #{GITINFO} - creating/updating #{file}"
+    Wunderbar.info "git_info: #{GITINFO} - creating/updating #{file}"
+
+    if File.exist?(file)
+      @changed = ChangeStatus::CHANGED
+    else
+      @changed = ChangeStatus::NEW
+    end
 
     # can get the following error if stdin_data is very large and diff fails with an error
     # before reading all the input, e.g. because the input file is missing:
@@ -67,9 +136,18 @@ def write_output(file, results)
       begin
         out, err, rc = Open3.capture3('diff', '-u', file, '-',
           stdin_data: results + "\n")
-        puts "\n#{out}\n" if err.empty? and rc.exitstatus == 1
-        rescue
-          # ignore failure here
+        if err.empty? and rc.exitstatus == 1
+          puts "\n#{out}\n"
+          ldaphost = ASF::LDAP.host()
+          if ldaphost
+            body = "\n#{ldaphost}\n\n#{out}\n"
+          else
+            body = "\n#{out}\n"
+          end
+          sendMail("Difference(s) in #{file}", body)
+        end
+      rescue => e
+        Wunderbar.warn "Got exception #{e}"
       end
     end
   
@@ -78,8 +156,32 @@ def write_output(file, results)
 
   else
   
-    puts "_INFO git_info: #{GITINFO} - no change to #{file}"
-  
+    Wunderbar.info "git_info: #{GITINFO} - no change to #{file}"
+    @changed = ChangeStatus::UNCHANGED
+
   end
 
+end
+
+# for debugging purposes
+if __FILE__ == $0
+  @noDiff = true
+  info = {}
+  require 'Tempfile'
+  file = Tempfile.new('test.tmp')
+  path = file.path
+  file.unlink # must not exist originally
+  begin
+    warn('Expecting create/update')
+    public_json_output_file(info, path)
+    warn('expecting new',@changed)
+    info = {a: 1}
+    public_json_output_file(info, path)
+    warn('expecting changed',@changed)
+    public_json_output_file(info, path)
+    warn('expecting unchanged',@changed)
+  ensure
+     file.close
+     file.unlink   # deletes the temp file
+  end
 end

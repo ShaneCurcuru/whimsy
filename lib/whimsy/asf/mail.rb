@@ -48,6 +48,30 @@ module ASF
 
       public_private ? @lists : @lists.keys
     end
+
+    # common configuration for sending mail
+    def self.configure
+      # fetch overrides
+      sendmail = ASF::Config.get(:sendmail)
+
+      if sendmail
+        # convert string keys to symbols
+        options = Hash[sendmail.map {|key, value| [key.to_sym, value.untaint]}]
+
+        # extract delivery method
+        method = options.delete(:delivery_method).to_sym
+      else
+        # provide defaults that work on whimsy-vm* infrastructure.  Since
+        # procmail is configured with a self-signed certificate, verification
+        # isn't a possibility
+        method = :smtp
+        options = {openssl_verify_mode: 'none'}
+      end
+
+      ::Mail.defaults do
+        delivery_method method, options
+      end
+    end
   end
 
   class Person < Base
@@ -93,7 +117,7 @@ module ASF
       when 'executive assistant'
         'ea@apache.org'
       when 'legal affairs'
-        'legal-discuss@apache.org'
+        'legal-internal@apache.org'
       when 'marketing and publicity'
         'press@apache.org'
       when 'tac'

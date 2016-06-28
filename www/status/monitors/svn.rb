@@ -1,12 +1,33 @@
 #
 # Monitor status of svn updates
 #
+=begin
+Sample input:
+---- cut here ---
+
+/srv/svn/Bills
+Updating '.':
+At revision 67610.
+
+/srv/svn/Meetings
+Updating '.':
+At revision 67610.
+
+---- cut here ---
+
+Output status level can be:
+Success - workspace is up to date
+Info - one or more files updated
+Warning - partial response
+Danger - unexpected text in log file
+
+=end
 
 def Monitor.svn(previous_status)
   # read cron log
   log = File.expand_path('../../../logs/svn-update', __FILE__)
   data = File.open(log) {|file| file.flock(File::LOCK_EX); file.read}
-  updates = data.split("\n/srv/svn/")[1..-1]
+  updates = data.split(%r{\n(?:/\w+)*/srv/svn/})[1..-1]
 
   status = {}
 
@@ -17,7 +38,7 @@ def Monitor.svn(previous_status)
     data = revision = update[/^(Updated to|At) revision \d+\.$/]
 
     lines = update.split("\n")
-    repository = lines.shift
+    repository = lines.shift.to_sym
 
     lines.reject! do |line| 
       line == "Updating '.':" or
@@ -35,7 +56,8 @@ def Monitor.svn(previous_status)
       if not data
         title = "partial response"
         level = 'warning'
-      elsif data.length == 1
+      # data may be a String rather than an array in which case .length is its length, not 1
+      elsif String  === data or data.length == 1
         title = "1 file updated"
       else
         title = "#{data.length} files updated"
@@ -52,4 +74,10 @@ def Monitor.svn(previous_status)
   end
 
   {data: status}
+end
+
+# for debugging purposes
+if __FILE__ == $0
+  require_relative 'unit_test'
+  runtest('svn') # must agree with method name above
 end

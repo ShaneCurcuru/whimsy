@@ -1,12 +1,10 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
 #
 # Server side router/controllers
 #
 
 require 'whimsy/asf'
-require 'whimsy/asf/podlings'
-require 'whimsy/asf/site'
 
 require 'wunderbar/sinatra'
 require 'wunderbar/bootstrap/theme'
@@ -81,7 +79,7 @@ end
 
 get '/json/podlings' do
   _json do
-    _! Hash[ASF::Podlings.new.map {|podling, definition| [podling, definition]}]
+    _! ASF::Podling.to_h
   end
 end
 

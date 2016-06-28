@@ -52,14 +52,47 @@ module ASF
         return @committee_info 
       end
 
-      list = Hash.new {|hash, name| hash[name] = find(name)}
 
       @committee_mtime = File.mtime(file)
       @@svn_change = Time.parse(
         `svn info #{file}`[/Last Changed Date: (.*) \(/, 1]).gmtime
 
+      parse_committee_info File.read(file)
+    end
+
+    # insert (replacing if necessary) a new committee
+    def self.establish(contents, pmc, date, people)
+      # split into foot, sections (array) and head
+      foot = contents[/^=+\s*\Z/]
+      contents.sub! /^=+\s*\Z/, ''
+      sections = contents.split(/^\* /)
+      head = sections.shift
+
+      # remove existing section (if present)
+      sections.delete_if {|section| section.downcase.start_with? pmc.downcase}
+
+      # build new section
+      section  = ["#{pmc}  (est. #{date.strftime('%m/%Y')})"]
+      people.sort.each do |id, name|
+        name = "#{name.ljust(26)} <#{id}@apache.org>"
+        section << "    #{(name).ljust(59)} [#{date.strftime('%Y-%m-%d')}]"
+      end
+
+      # add new section
+      sections << section.join("\n") + "\n\n\n"
+
+      # sort sections
+      sections.sort_by!(&:downcase)
+
+      # re-attach parts
+      head + '* ' + sections.join('* ') + foot
+    end
+
+    def self.parse_committee_info(contents)
+      list = Hash.new {|hash, name| hash[name] = find(name)}
+
       # Split the file on lines starting "* ", i.e. the start of each group in section 3
-      info = File.read(file).split(/^\* /)
+      info = contents.split(/^\* /)
       # Extract the text before first entry in section 3 and split on section headers,
       # keeping sections 1 (COMMITTEES) and 2 (REPORTING).
       head, report = info.shift.split(/^\d\./)[1..2]
@@ -82,21 +115,27 @@ module ASF
       # for each committee in section 3
       info.each do |roster|
         # extract the committee name and canonicalise
-        committee = list[@@namemap.call(roster[/(\w.*?)\s+\(/,1])]
-        # get the start date
-        committee.established = roster[/\(est\. (.*?)\)/, 1]
+        committee = list[@@namemap.call(roster[/(\w.*?)[ \t]+\(/,1])]
+
+        # get and normalize the start date
+        established = roster[/\(est\. (.*?)\)/, 1]
+        established = "0#{established}" if established =~ /^\d\//
+        committee.established = established
+
         # extract the availids (is this used?)
         committee.info = roster.scan(/<(.*?)@apache\.org>/).flatten
+
         # drop (chair) markers and extract 0: name, 1: availid, 2: [date], 3: date
+        # the date is optional (e.g. infrastructure)
         committee.roster = Hash[roster.gsub(/\(\w+\)/, '').
-          scan(/^\s*(.*?)\s*<(.*?)@apache\.org>\s+(\[(.*?)\])?/).
+          scan(/^[ \t]*(.*?)[ \t]*<(.*?)@apache\.org>(?:[ \t]+(\[(.*?)\]))?/).
           map {|list| [list[1], {name: list[0], date: list[3]}]}]
       end
 
       # process report section
       report.scan(/^([^\n]+)\n---+\n(.*?)\n\n/m).each do |period, committees|
-        committees.scan(/^   \s*(.*)/).each do |committee|
-          committee, comment = committee.first.split(/\s+#\s+/,2)
+        committees.scan(/^   [ \t]*(.*)/).each do |committee|
+          committee, comment = committee.first.split(/[ \t]+#[ \t]+/,2)
           committee = list[committee]
           if comment
             committee.report = "#{period}: #{comment}"

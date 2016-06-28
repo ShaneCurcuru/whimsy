@@ -165,9 +165,9 @@ class Post < React
     return false if @disabled
 
     if @@button.text == 'add resolution'
-      return @report != '' and @title != ''
+      return @report != '' && @title != ''
     else
-      return @report != @@item.text and @message != ''
+      return @report != @@item.text && @message != ''
     end
   end
 
@@ -198,7 +198,7 @@ class Post < React
       jQuery('#post-report-form').modal(:hide)
       document.body.classList.remove('modal-open')
       @disabled = false
-      Agenda.load response.agenda
+      Agenda.load response.agenda, response.digest
     end
   end
 end

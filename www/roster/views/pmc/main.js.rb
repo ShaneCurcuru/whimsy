@@ -32,16 +32,31 @@ class PMC < React
 
     # usage information for authenticated users (PMC chair, etc.)
     if auth
-      _div.alert.alert_success 'Double click on a row to edit.  ' +
-        "Double click on \u2795 to add."
+      _div.alert.alert_success do
+        _span 'Double click on a row to edit.'
+        unless @committee.roster.keys().empty?
+          _span "  Double click on \u2795 to add."
+        end
+      end
     end
 
     # main content
     _PMCMembers auth: auth, committee: @committee
     _PMCCommitters auth: auth, committee: @committee
 
+    _h2.mail! 'Mail lists'
+    _ul do
+      for mail_name in @committee.mail
+        parsed = mail_name.match(/^(.*?)-(.*)/)
+        _li do
+          _a mail_name, href: 'https://lists.apache.org/list.html?' +
+            "#{parsed[2]}@#{parsed[1]}.apache.org"
+        end
+      end
+    end
+
     # reporting schedule
-    _h2 'Reporting Schedule'
+    _h2.reporting! 'Reporting Schedule'
     _ul do
       _li @committee.report
 
@@ -52,6 +67,13 @@ class PMC < React
       _li do
         _a 'Prior reports', href: 'https://whimsy.apache.org/board/minutes/' +
           @committee.display_name.gsub(/\s+/, '_')
+      end
+
+      if @committee.ldap[@@auth.id] or @@auth.member
+        _li do
+          _a 'Apache Committee Report Helper',
+            href: "https://reporter.apache.org/?#{@committee.id}"
+        end
       end
     end
 

@@ -1,12 +1,11 @@
-#!/usr/bin/ruby1.9.1
+#!/usr/bin/env ruby
 # encoding: utf-8
 require 'wunderbar'
 require "date"
 require "yaml"
 
 require 'whimsy/asf'
-require 'whimsy/asf/podlings'
-require 'whimsy/asf/site'
+
 user = ASF::Person.new($USER)
 unless user.asf_member? or ASF.pmc_chairs.include? user or $USER=='ea'
   print "Status: 401 Unauthorized\r\n"

@@ -1,4 +1,4 @@
-#!/usr/bin/ruby1.9.1
+#!/usr/bin/env ruby
 
 require 'whimsy/asf'
 require 'wunderbar'
@@ -34,6 +34,9 @@ _html do
       _label 'Enter Commit Message:', for: 'message'
       _textarea name: 'message', id: 'message', cols: 80, required: true
 
+      _label 'Funding source:', for: 'source'
+      _textarea name: 'source', id: 'source', cols: 80
+
       _label 'Select a destination:'
       _div do
         _input 'Bills/received', type: 'radio', name: 'dest', value: 'received',
@@ -48,6 +51,9 @@ _html do
   end
 
   if @file
+    # destination directory
+    bills = 'https://svn.apache.org/repos/private/financials/Bills'
+
     # validate @file, @dest form parameters
     name = @file.original_filename.gsub(/[^-.\w]/, '_').sub(/^\.+/, '_').untaint
     @dest.untaint if @dest =~ /^\w+$/
@@ -59,38 +65,17 @@ _html do
     elsif not @dest or @dest.empty?
       _pre 'Destination is required', class: '_stderr'
     else
-      Dir.chdir File.join(ASF::SVN['private/financials/Bills'], @dest) do
-        _h2 'Commit log'
-
-        # cleanup anything left over from previous runs
-        `svn cleanup`
-        status = `svn status`
-        unless status.empty?
-          status.scan(/^[?A]\s*\+?\s*(.*)/).flatten.each do |uncommitted|
-            _.system ['rm', '-rf', uncommitted]
-          end
-          if status =~ /^\w/
-            _.system ['svn', 'revert', '-R', file]
-          end
-        end
-
-        _.system 'svn up'
-
-        if File.exist? name
-          _pre "File #{name} already exists", class: '_stderr'
-        else
-          # write file out to disk
-          File.open(name, 'wb') {|file| file.write @file.read}
-          _.system ['svn', 'add', name]
-
-          # commit
-          _.system [
-            'svn', 'commit', '-m', @message, name,
-            ['--no-auth-cache', '--non-interactive'],
-            (['--username', $USER, '--password', $PASSWORD] if $PASSWORD)
-          ]
-        end
+      # append funding source to message, if present
+      if @source and not @source.empty?
+        @message += "\n\nFunding source: #{@source}" 
       end
+
+      # add file to svn (--revision 0 means it won't overwrite an existing file)
+      _.system ['svnmucc', '--revision', '0', '--message', @message,
+         ['--no-auth-cache', '--non-interactive'],
+         (['--username', $USER, '--password', $PASSWORD] if $PASSWORD),
+        '--', 'put', '-', File.join(bills, @dest, name)],
+        stdin: @file
     end
   end
 end

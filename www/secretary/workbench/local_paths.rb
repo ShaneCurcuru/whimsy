@@ -1,8 +1,13 @@
+require 'fileutils'
+
 # attempt to determine where 'HOME' is
 unless ENV['HOME']
   ENV['HOME'] = $1 if ENV['SCRIPT_FILENAME'] =~ /(.*?)\/public_html\//
   ENV['HOME'] = $1 if ENV['SCRIPT_FILENAME'] =~ /(.*?)\/Sites\//
 end
+
+# override home for whimsy
+ENV['HOME'] = '/var/www' if `hostname`.chomp == 'whimsy-vm3'
 
 # look for local_paths.yml or ~/.secassist (in that order)
 config = 'local_paths.yml'
@@ -13,6 +18,8 @@ end
 # set constants based on the configuration file
 require 'yaml'
 YAML.load(open(config).read).each do |key, value|
+  FileUtils.mkdir_p value unless File.exist? value
+
   Object.const_set key.upcase,
     File.realpath(File.expand_path(value).untaint).untaint
 end

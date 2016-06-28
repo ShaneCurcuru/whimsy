@@ -1,4 +1,6 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
+$LOAD_PATH.unshift File.realpath(File.expand_path('../../lib', __FILE__))
+
 require 'whimsy/asf'
 require 'date'
 require 'builder'
@@ -6,13 +8,25 @@ require 'ostruct'
 require 'nokogiri'
 require 'net/https'
 require 'fileutils'
+require 'wunderbar'
+
+Wunderbar.log_level = 'info' unless Wunderbar.logger.info? # try not to override CLI flags
+
+# Add datestamp to log messages (progname is not needed as each prog has its own logfile)
+Wunderbar.logger.formatter = proc { |severity, datetime, progname, msg|
+      "_#{severity} #{datetime} #{msg}\n"
+    }
 
 # for monitoring purposes
 at_exit do
-  if $1 and not $1.instance_of? SystemExit
-    puts "\n*** Exception #{$!.class} ***"
+  if $! and not $!.instance_of? SystemExit
+    msg = "#{$!.backtrace.first} #{$!.message}" rescue $!
+    puts "\n*** Exception #{$!.class} : #{msg} ***"
   end
+  Wunderbar.info "Finished #{__FILE__}"
 end
+
+Wunderbar.info "Starting #{__FILE__}"
 
 # destination directory
 SITE_MINUTES = ASF::Config.get(:board_minutes) ||
@@ -42,6 +56,7 @@ incubator = URI.parse('http://incubator.apache.org/')
 # quick exit if everything is up to date
 if File.exist? "#{SITE_MINUTES}/index.html"
   input = Dir["#{SVN_SITE_RECORDS_MINUTES}/*/board_minutes_20*.txt",
+    "#{TEMPLATES}/index.html", # if the template changes, we need to regenerate
     "#{BOARD}/board_minutes_20*.txt"].
     map {|name| File.stat(name).mtime}.push(File.stat(__FILE__).mtime).max
   exit if File.stat("#{SITE_MINUTES}/index.html").mtime >= input
@@ -55,24 +70,22 @@ canonical.merge! \
     'security team'               => 'security',
     'c++ standard library'        => 'stdcxx'
 
-# parse podling information
+# extract podling information
 site = {}
-podlings = Nokogiri::XML(File.read("#{INCUBATOR_SITE_AUTHOR}/podlings.xml"))
-podlings.search('podling').each do |podling|
-  if podling['name'].downcase != podling['resource']
-    canonical[podling['name'].downcase] = podling['resource']
+ASF::Podling.list.each do |podling|
+  if podling.display_name.downcase != podling.name
+    canonical[podling.display_name.downcase] = podling.name
   end
 
-  if podling['status'] == 'graduated' and podling['enddate']
-    next if podling['enddate'].length < 10
-    next if Date.today - Date.parse(podling['enddate']) > 90
+  if podling.status == 'graduated' and podling.enddate
+    next if Date.today - podling.enddate > 90
   end
 
-  site[podling["resource"]] = {
-    :name => podling["name"],
-    :status => podling["status"],
-    :link => incubator + "projects/#{podling["resource"]}.html",
-    :text => podling.at('description').text
+  site[podling.name] = {
+    name:   podling.display_name,
+    status: podling.status,
+    link:   incubator + "projects/#{podling.name}.html",
+    text:   podling.description
   }
 end
 
@@ -571,10 +584,11 @@ def layout(title = nil)
     $calendar.at('title').content = "Board Meeting Minutes"
 #   $calendar.at('h2').content = "Board Meeting Minutes"
   end
+  stamp = DateTime.now.strftime '%Y-%m-%d %H:%M'
   section = $calendar.at('.container p strong').parent.parent
   paragraphs = section.search('p')
   paragraphs.first.children.last.content =
-    paragraphs.first.children.last.content.sub 'is a', 'is extracted from a'
+    paragraphs.first.children.last.content.sub 'is a', "was extracted (@ #{stamp}) from a"
 
   section.children.each {|child| child.remove}
   section.add_child paragraphs[0]
@@ -770,7 +784,4 @@ end
 
 open("#{SITE_MINUTES}/index.html", 'w') {|file| file.write page}
 
-if `hostname`.strip == 'rubix'
-  system "rsync -av #{SITE_MINUTES}/ " +
-    "people.apache.org:public_html/board/minutes/"
-end
+Wunderbar.info "Wrote #{SITE_MINUTES}/index.html"

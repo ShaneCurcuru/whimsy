@@ -1,12 +1,10 @@
-#!/usr/bin/ruby1.9.1
+#!/usr/bin/env ruby
 $LOAD_PATH.unshift File.realpath(File.expand_path('../../../lib', __FILE__))
 
 require 'wunderbar'
 require 'whimsy/asf'
-require 'whimsy/asf/podlings'
-require 'whimsy/asf/site'
 
-SUBSCRIPTIONS = '/home/apmail/subscriptions/members'
+SUBSCRIPTIONS = '/srv/subscriptions/members'
 
 _html do
   _head_ do
@@ -59,11 +57,12 @@ _html do
 
     members = ASF::Member.new.map {|id, text| ASF::Person[id]}
     ASF::Person.preload('cn', members)
+    maillist = ASF::Mail.list
 
     subscriptions = []
     File.readlines(SUBSCRIPTIONS).each do |line|
-      person = ASF::Mail.list[line.downcase.strip]
-      person ||= ASF::Mail.list[line.downcase.strip.sub(/\+\w+@/,'@')]
+      person = maillist[line.downcase.strip]
+      person ||= maillist[line.downcase.strip.sub(/\+\w+@/,'@')]
       if person
         id = person.id
         id = '*notinavail*' if id == 'notinavail'

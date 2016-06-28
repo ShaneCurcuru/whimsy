@@ -44,7 +44,7 @@ class Main < React
       Server[prop] = @@server[prop]
     end
 
-    Agenda.load(@@page.parsed)
+    Agenda.load(@@page.parsed, @@page.digest)
     Minutes.load(@@page.minutes)
     self.route(@@page.path, @@page.query)
 
@@ -110,8 +110,20 @@ class Main < React
     # avoid overlapping the header and footer areas
     def window.onresize()
       main = ~'main'
-      main.style.marginTop = "#{~'header.navbar'.clientHeight}px"
-      main.style.marginBottom = "#{~'footer.navbar'.clientHeight}px"
+      if 
+        window.innerHeight <= 400 and 
+        document.body.scrollHeight > window.innerHeight
+      then
+        document.querySelector('footer').style.position = 'relative'
+        document.querySelector('header').style.position = 'relative'
+        main.style.marginTop = 0
+        main.style.marginBottom = 0
+      else
+        document.querySelector('footer').style.position = 'fixed'
+        document.querySelector('header').style.position = 'fixed'
+        main.style.marginTop = "#{~'header.navbar'.clientHeight}px"
+        main.style.marginBottom = "#{~'footer.navbar'.clientHeight}px"
+      end
 
       if Main.scrollTo == 0 or Main.scrollTo
         if Main.scrollTo == -1
@@ -129,7 +141,7 @@ class Main < React
     window.onresize()
 
     # if agenda is stale, fetch immediately; otherwise save etag
-    Agenda.fetch(@@page.etag)
+    Agenda.fetch(@@page.etag, @@page.digest)
 
     # start backchannel
     Events.monitor()

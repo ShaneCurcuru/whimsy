@@ -9,7 +9,7 @@ class PMCMembers < React
   end
 
   def render
-    _h2 'PMC'
+    _h2.pmc! 'PMC'
     _table.table.table_hover do
       _thead do
         _tr do
@@ -24,7 +24,7 @@ class PMCMembers < React
           _PMCMember auth: @@auth, person: person, committee: @@committee
         end
 
-        if @@auth
+        if @@auth and not @@committee.roster.keys().empty?
           _tr onDoubleClick: self.select do
             _td((@state == :open ? '' : "\u2795"), colspan: 4)
           end
@@ -92,8 +92,15 @@ class PMCMember < React
 
   def render
     _tr onDoubleClick: self.select do
-      _td {_a @@person.id, href: "committer/#{@@person.id}"}
-      _td @@person.name
+
+      if @@committee.asfmembers.include? @@person.id
+        _td { _b @@person.name }
+        _td { _b { _a @@person.id, href: "committer/#{@@person.id}" } }
+      else
+        _td @@person.name
+	_td { _a @@person.id, href: "committer/#{@@person.id}" }
+      end
+
       _td @@person.date
 
       if @state == :open
@@ -101,13 +108,13 @@ class PMCMember < React
           if @@person.date == 'pending'
             _button.btn.btn_primary 'Add as a committer and to the PMC',
               # not added yet
-              data_action: 'add pmc commit',
+              data_action: 'add pmc info commit',
               data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: "Add #{@@person.name} to the " +
                 "#{@@committee.display_name} PMC and grant committer access?"
 
             _button.btn.btn_warning 'Add to PMC only', data_target: '#confirm',
-              data_action: 'add pmc', data_toggle: 'modal',
+              data_action: 'add pmc info', data_toggle: 'modal',
               data_confirmation: "Add #{@@person.name} to the " +
                 "#{@@committee.display_name} PMC?"
           elsif not @@person.date
@@ -117,9 +124,12 @@ class PMCMember < React
               data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: "Remove #{@@person.name} from LDAP?"
 
-            _button.btn.btn_success 'Add to committee_info.txt',
-              disabled: true,
-              data_confirmation: "Add to #{@@person.name} committee_info.txt"
+            unless @@committee.roster.keys().empty?
+              _button.btn.btn_success 'Add to committee-info.txt',
+                data_action: 'add info',
+                data_target: '#confirm', data_toggle: 'modal',
+                data_confirmation: "Add to #{@@person.name} committee-info.txt"
+            end
           elsif not @@person.ldap
              # in committee-info.txt but not in ldap
             _button.btn.btn_success 'Add to LDAP',
@@ -127,14 +137,15 @@ class PMCMember < React
               data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: "Add #{@@person.name} to LDAP?"
 
-            _button.btn.btn_warning 'Remove from committee_info.txt',
-              disabled: true,
+            _button.btn.btn_warning 'Remove from committee-info.txt',
+              data_action: 'remove info',
+              data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: 
-                "Remove #{@@person.name} from committee_info.txt?"
+                "Remove #{@@person.name} from committee-info.txt?"
           else
             # in both LDAP and committee-info.txt
             _button.btn.btn_warning 'Remove from PMC',
-              data_action: 'remove pmc commit', 
+              data_action: 'remove pmc info commit', 
               data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: "Remove #{@@person.name} from the " +
                 "#{@@committee.display_name} PMC?"
@@ -148,7 +159,7 @@ class PMCMember < React
           end
         end
       elsif not @@person.date
-        _td.issue 'not in committee_info.txt'
+        _td.issue 'not in committee-info.txt'
       elsif not @@person.ldap
         _td.issue 'not in LDAP'
       elsif not @@committee.committers[@@person.id]

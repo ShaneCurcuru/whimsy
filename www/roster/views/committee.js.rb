@@ -53,7 +53,7 @@ class PMCMembers < React
   end
 
   def render
-    _h2 'PMC'
+    _h2.pmc! 'PMC'
     _table.table.table_hover do
       _thead do
         _tr do
@@ -134,7 +134,7 @@ class PMCCommitters < React
     if @@committee.committers.keys().all? {|id| @@committee.roster[id]}
       _p 'All committers are members of the PMC'
     else
-      _h2 'Committers'
+      _h2.committers! 'Committers'
       _table.table.table_hover do
         _thead do
           _tr do
@@ -232,9 +232,9 @@ class PMCMember < React
               data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: "Remove #{@@person.name} from LDAP?"
 
-            _button.btn.btn_success 'Add to committee_info.txt',
+            _button.btn.btn_success 'Add to committee-info.txt',
               disabled: true,
-              data_confirmation: "Add to #{@@person.name} committee_info.txt"
+              data_confirmation: "Add to #{@@person.name} committee-info.txt"
           elsif not @@person.ldap
              # in committee-info.txt but not in ldap
             _button.btn.btn_success 'Add to LDAP',
@@ -242,10 +242,10 @@ class PMCMember < React
               data_target: '#confirm', data_toggle: 'modal',
               data_confirmation: "Add #{@@person.name} to LDAP?"
 
-            _button.btn.btn_warning 'Remove from committee_info.txt',
+            _button.btn.btn_warning 'Remove from committee-info.txt',
               disabled: true,
               data_confirmation: 
-                "Remove #{@@person.name} from committee_info.txt?"
+                "Remove #{@@person.name} from committee-info.txt?"
           else
             # in both LDAP and committee-info.txt
             _button.btn.btn_warning 'Remove from PMC',
@@ -263,7 +263,7 @@ class PMCMember < React
           end
         end
       elsif not @@person.date
-        _td.issue 'not in committee_info.txt'
+        _td.issue 'not in committee-info.txt'
       elsif not @@person.ldap
         _td.issue 'not in LDAP'
       elsif not @@committee.committers[@@person.id]
@@ -282,7 +282,8 @@ class PMCMember < React
   end
 
   # automatically open pending entries
-  def componentWillReceiveProps()
+  def componentWillReceiveProps(newprops)
+    @state = :closed if self.person != newprops.person
     @state = :open if @@person.date == 'pending'
   end
 
@@ -346,7 +347,8 @@ class PMCCommitter < React
   end
 
   # automatically open pending entries
-  def componentWillReceiveProps()
+  def componentWillReceiveProps(newprops)
+    @state = :closed if self.person != newprops.person
     @state = :open if @@person.date == 'pending'
   end
 
@@ -383,7 +385,7 @@ class PMCConfirm < React
           end
 
           _div.modal_footer do
-            _button.btn.btn_default 'Cancel', data_dismiss:"modal"
+            _button.btn.btn_default 'Cancel', data_dismiss: 'modal'
             _button.btn @button, class: @color, onClick: self.post
           end
         end

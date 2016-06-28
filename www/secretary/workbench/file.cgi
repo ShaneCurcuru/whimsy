@@ -1,4 +1,6 @@
-#!/usr/bin/ruby1.9.1
+#!/usr/bin/env ruby
+$LOAD_PATH.unshift File.realpath(File.expand_path('../../../../lib', __FILE__))
+
 require 'wunderbar'
 require 'open3'
 require './local_paths'
@@ -9,6 +11,8 @@ require 'time'
 require 'whimsy/asf'
 
 ENV['LANG'] = 'en_US.UTF-8'
+
+ENV['GNUPGHOME'] = '/srv/gpg' if Dir.exist?('/srv/gpg')
 
 def html_fragment(&block)
   x = Wunderbar::HtmlMarkup.new({})
@@ -200,7 +204,7 @@ def svn_info(source)
   info
 end
 
-def email(target, message)
+def send_email(target, message)
   pending = YAML.load(open(PENDING_YML))
 
   require MAIL if defined?(MAIL)
@@ -210,9 +214,9 @@ def email(target, message)
   pending.each do |pending_hash|
     next unless pending_hash['email'] == target
 
-    vars = OpenStruct.new(pending_hash.map {|k,v| 
+    vars = OpenStruct.new(Hash[pending_hash.map {|k,v| 
       [k.gsub(/\W/,'_'), v.dup.untaint]
-    })
+    }])
     vars.commit_message = message
 
     # collapse pmc and podling variable names
@@ -223,6 +227,8 @@ def email(target, message)
     template = vars.doctype + '.erb'
     template.taint unless template =~ /^\w[.\w]+$/
     if defined?(MAIL) and File.exist?(template)
+      # prepare to send mail
+      ASF::Mail.configure
 
       # extract fields from the Mail defaults
       Mail.defaults do
@@ -232,10 +238,10 @@ def email(target, message)
       end
 
       # expand template
-      def vars.get_binding
-        binding
+      def vars.render(template)
+        ERB.new(template).result(binding)
       end
-      message = ERB.new(open(template).read.untaint).result(vars.get_binding)
+      message = vars.render(open(template).read.untaint)
       headers = message.slice!(/\A(\w+: .*\r?\n)*(\r?\n)*/)
 
       mail = Mail.new do
@@ -348,7 +354,7 @@ _json do
   elsif @cmd == 'icla.txt issues'
     _html check
   elsif @cmd =~ /email (.*)/
-    _html email $1, @message
+    _html send_email $1, @message
   elsif @cmd =~ /svn (update|revert -R|cleanup)/ and committable.include? @file
     op, file = $1.split(' '), @file
     _html html_fragment {
@@ -393,7 +399,7 @@ _json do
     cmd, group, availid = @cmd, @group, @availid
     _html html_fragment {
       _pre cmd, class: '_stdin'
-      ldap = ASF.init_ldap
+      ldap = ASF.init_ldap(true)
       ldap.bind("uid=#{$USER},ou=people,dc=apache,dc=org", $PASSWORD)
 
       ldap.modify "cn=#{group},ou=groups,dc=apache,dc=org",
@@ -643,11 +649,10 @@ _html do
         " Avail ID: #{@mavailid}"
       ].compact.join("\n") + "\n"
 
-      sorted = members.sort_by {|member| lname(member.split("\n").first)}
-      members_txt[pattern,1] = " *) " + sorted.join("\n *) ")
+      members_txt[pattern,1] = " *) " + members.join("\n *) ")
       members_txt[/We now number (\d+) active members\./,1] = 
         members.length.to_s
-      open("#{FOUNDATION}/members.txt",'w') {|fh| fh.write(members_txt)}
+      File.write("#{FOUNDATION}/members.txt", ASF::Member.sort(members_txt))
 
       _.system "svn diff #{FOUNDATION}/members.txt"
 
@@ -794,19 +799,19 @@ _html do
           _.system "svn rm #{@source}#{at}"
         elsif @dest == 'flip'
           _h1 'Flip'
-          _.system "pdftk #{@source} cat 1-endS output #{@source}.tmp"
+          _.system "pdftk #{@source} cat 1-endSouth output #{@source}.tmp"
           _.system "mv #{@source}.tmp #{@source}"
         elsif @dest == 'restore'
           _h1 'Restore'
-          _.system "pdftk #{@source} cat 1-endN output #{@source}.tmp"
+          _.system "pdftk #{@source} cat 1-endNorth output #{@source}.tmp"
           _.system "mv #{@source}.tmp #{@source}"
         elsif @dest == 'rotate right'
           _h1 'Rotate Right'
-          _.system "pdftk #{@source} cat 1-endE output #{@source}.tmp"
+          _.system "pdftk #{@source} cat 1-endEast output #{@source}.tmp"
           _.system "mv #{@source}.tmp #{@source}"
         elsif @dest == 'rotate left'
           _h1 'Rotate Left'
-          _.system "pdftk #{@source} cat 1-endW output #{@source}.tmp"
+          _.system "pdftk #{@source} cat 1-endWest output #{@source}.tmp"
           _.system "mv #{@source}.tmp #{@source}"
         elsif @dest == 'junk'
           _.system(['svn', 'rm', '--force', "#{@source}#{at}"])

@@ -1,4 +1,4 @@
-#!/usr/bin/ruby1.9.1
+#!/usr/bin/env ruby
 $LOAD_PATH.unshift File.realpath(File.expand_path('../../../lib', __FILE__))
 
 require 'mail'
@@ -22,9 +22,11 @@ archive.each do |email|
   message = IO.read(email, mode: 'rb')
   next unless message[/^Date: .*/].to_s.include? year
   subject = message[/^Subject: .*/]
-  next unless subject.include? "[MEMBER NOMINATION]"
+  next unless subject.upcase.include? "MEMBER"
+  next unless subject.upcase.include? "NOMINATION"
   mail = Mail.new(message)
-  emails << mail if mail.subject.start_with? "[MEMBER NOMINATION]"
+  next if mail.subject.downcase == 'member nomination process'
+  emails << mail if mail.subject =~ /^\[?MEMBER(SHIP)? NOMINATION\]?/i
 end
 
 # parse nominations for names and ids
@@ -40,6 +42,10 @@ nominations.map! do |line|
   {name: line.gsub(/<.*|\(\w+@.*/, '').strip, id: line[/([.\w]+)@/, 1]}
 end
 
+# preload names
+people = ASF::Person.preload('cn', 
+  nominations.map {|nominee| ASF::Person.find(nominee[:id])})
+
 # location of svn repository
 svnurl = `cd #{meeting}; svn info`[/URL: (.*)/, 1]
 
@@ -50,6 +56,11 @@ _html do
 
   _style %{
     .missing {background-color: yellow}
+    .flexbox {display: flex; flex-flow: row wrap}
+    .flexitem {flex-grow: 1}
+    .flexitem:first-child {order: 2}
+    .flexitem:last-child {order: 1}
+    .count {margin-left: 4em}
   }
 
   # common banner
@@ -58,36 +69,63 @@ _html do
       src: "https://www.apache.org/img/asf_logo.png"
   end
 
-  _h1_! do
-    _ "Nominations in "
-    _a 'svn', href: File.join(svnurl, 'nominated-members.txt')
-  end
+  _div.flexbox do
+    _div.flexitem do
+      _h1_! do
+        _a 'Nominees', href: 'watch/nominees'
+        _ ' in '
+        _a 'svn', href: File.join(svnurl, 'nominated-members.txt')
+      end
 
-  _ul nominations.sort_by {|person| person[:name]} do |person|
-    _li! do
-      _a person[:name], href: "#{ROSTER}/#{person[:id]}"
+      _p.count "Count: #{nominations.count}"
+
+      _ul nominations.sort_by {|nominee| nominee[:name]} do |nominee|
+        _li! do
+          person = ASF::Person.find(nominee[:id])
+          match = /\b(#{nominee[:name]}|#{person.public_name})\b/i
+
+          if emails.any? {|mail| mail.subject.downcase =~ match}
+            _a.present person.public_name, href: "#{ROSTER}/#{nominee[:id]}"
+          else
+            _a.missing person.public_name, href: "#{ROSTER}/#{nominee[:id]}"
+          end
+
+          if nominee[:name] != person.public_name
+            _span " (as #{nominee[:name]})"
+          end
+        end
+      end
     end
-  end
 
-  nominations.map! {|person| person[:name].downcase}
+    nominees = nominations.map! {|person| person[:name]}
+    nominees += people.map {|person| person.public_name}
 
-  _h1_.posted! "Posted nominations reports"
+    _div.flexitem do
+      _h1_.posted! do
+        _a "Posted", href:
+          'https://mail-search.apache.org/members/private-arch/members/'
+        _ " nominations reports"
+      end
 
-  # attempt to sort reports by PMC name
-  emails.sort_by! do |mail| 
-    mail.subject.downcase.gsub('- ', '')
-  end
+      _p.count "Count: #{emails.count}"
 
-  # output an unordered list of subjects linked to the message archive
-  _ul emails do |mail|
-    _li do
-      href = MBOX + mail.date.strftime('%Y%m') + '.mbox/' + 
-        URI.escape('<' + mail.message_id + '>')
+      # attempt to sort reports by PMC name
+      emails.sort_by! do |mail| 
+        mail.subject.downcase.gsub('- ', '')
+      end
 
-      if nominations.any? {|name| mail.subject.downcase =~ /\b#{name}\b/}
-        _a.present mail.subject, href: href
-      else
-        _a.missing mail.subject, href: href
+      # output an unordered list of subjects linked to the message archive
+      _ul emails do |mail|
+        _li do
+          href = MBOX + mail.date.strftime('%Y%m') + '.mbox/' + 
+            URI.escape('<' + mail.message_id + '>')
+
+          if nominees.any? {|name| mail.subject =~ /\b#{name}\b/i}
+            _a.present mail.subject, href: href
+          else
+            _a.missing mail.subject, href: href
+          end
+        end
       end
     end
   end

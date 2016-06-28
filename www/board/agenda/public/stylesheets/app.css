@@ -228,12 +228,27 @@ main hr {
   border-color: #DDD;
 }
 
+.table-bordered {
+  width: 100%;
+}
+
+.table-bordered tr {
+  line-height: 200%;
+}
+
+.table-bordered td {
+  padding: 4px;
+}
+
 @media screen and (min-width: 768px) {
   .wide-form .modal-dialog {
     width: 80%;
   }
   .wide-form .modal-footer {
     margin-top: 0  
+  }
+  .table-bordered {
+    width: auto;
   }
 }
 
@@ -267,6 +282,10 @@ footer button {
   margin-bottom: 1em;
 }
 
+.flexbox .report-info {
+  display: none;
+}
+
 @media only screen and (min-width: 1200px) {
   .flexbox {
     display: flex;
@@ -277,6 +296,18 @@ footer button {
   .flexbox > section {
     justify-content: flex-start;
     min-width: 48%;
+  }
+
+  .navbar .report-info {
+    display: none
+  }
+
+  .flexbox .report-info {
+    display: block;
+  }
+
+  .flexbox .report-info .dl-horizontal {
+    margin-left: -3em;
   }
 }
 
@@ -401,7 +432,8 @@ dl.chatlog dd.info {
 }
 
 #rollcall li {
-  line-height: 180%;
+  display: flex;
+  height: 30px;
 }
 
 #rollcall ul li input[type=checkbox] {
@@ -419,9 +451,8 @@ dl.chatlog dd.info {
 }
 
 #rollcall ul li:hover input[type=text] {
-  display: inline;
-  height: 100%;
-  line-height: 100%;
+  display: inline-block;
+  margin-bottom: 10px;
 }
 
 #rollcall ul li:hover span {
@@ -446,3 +477,8 @@ button.checklist {
   margin-left: 1.5em;
   margin-bottom: 1em;
 }
+
+h5.history {
+  margin-left: 1em;
+}
+

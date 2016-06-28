@@ -42,12 +42,14 @@ require_relative 'buttons/showseen'
 require_relative 'buttons/timestamp'
 require_relative 'buttons/vote'
 require_relative 'buttons/email'
+require_relative 'buttons/feedback'
 
 # Common elements
 require_relative 'elements/additional-info'
 require_relative 'elements/link'
 require_relative 'elements/modal-dialog'
 require_relative 'elements/text'
+require_relative 'elements/info'
 
 # Model
 require_relative 'models/events'
@@ -57,3 +59,5 @@ require_relative 'models/chat'
 require_relative 'models/jira'
 require_relative 'models/pending'
 require_relative 'models/posted'
+require_relative 'models/comments'
+require_relative 'models/jsonstorage'

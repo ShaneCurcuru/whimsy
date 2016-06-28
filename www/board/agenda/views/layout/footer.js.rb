@@ -58,7 +58,7 @@ class Footer < React
 
       if link
         _Link.backlink.navbar_brand text: link.title, rel: 'prev', 
-         href: "#{prefix}#{link.href}"
+         href: "#{prefix}#{link.href}", class: link.color
       elsif @@item.prev or @@item.next
         # without this, Chrome will sometimes make the footer too tall
         _a.navbar_brand
@@ -88,12 +88,12 @@ class Footer < React
         while link and not link.ready_for_review(Server.initials)
           link = link.next
         end
-        link ||= {href: '../queue', title: 'Queue'}
+        link ||= {href: 'queue', title: 'Queue'}
       elsif @@options.traversal == :shepherd
         while link and link.shepherd != @@item.shepherd
           link = link.next
         end
-        link ||= {href: "../#{@@item.shepherd}", title: 'Shepherd'}
+        link ||= {href: "shepherd/#{@@item.shepherd}", title: 'shepherd'}
       elsif @@options.traversal == :flagged
         prefix = 'flagged/'
         while link and not link.flagged
@@ -104,7 +104,7 @@ class Footer < React
             link = link.next
           end
         end
-        link ||= {href: "../flagged", title: 'Flagged'}
+        link ||= {href: "flagged", title: 'Flagged'}
       elsif Minutes.started and link and link.attach == 'A'
         while link and not link.flagged and link.attach =~ /^[A-Z]/
           link = link.next
@@ -114,10 +114,11 @@ class Footer < React
       end
 
       if link
+        prefix = '' unless  link.attach =~ /^[A-Z]/
         _Link.nextlink.navbar_brand text: link.title, rel: 'next', 
-         href: "#{prefix}#{link.href}"
+         href: "#{prefix}#{link.href}", class: link.color
       elsif @@item.prev or @@item.next
-        # keep Chrome happy
+        # without this, Chrome will sometimes make the footer too tall
         _a.nextarea.navbar_brand
       end
     end

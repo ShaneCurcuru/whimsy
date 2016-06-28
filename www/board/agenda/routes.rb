@@ -8,14 +8,19 @@ get %r{^/(\d\d\d\d-\d\d-\d\d)/feedback$} do |date|
 end
 get %r{^/(\d\d\d\d-\d\d-\d\d)/feedback.json$} do |date|
   @agenda = "board_agenda_#{date.gsub('-', '_')}.txt".untaint
+  @dryrun = true
+  _json :'actions/feedback'
+end
+post %r{^/(\d\d\d\d-\d\d-\d\d)/feedback.json$} do |date|
+  @agenda = "board_agenda_#{date.gsub('-', '_')}.txt".untaint
+  @dryrun = false
   _json :'actions/feedback'
 end
 
 # redirect root to latest agenda
 get '/' do
   agenda = dir('board_agenda_*.txt').sort.last
-  response.headers['Location'] = "#{agenda[/\d+_\d+_\d+/].gsub('_', '-')}/"
-  status 302
+  redirect to("/#{agenda[/\d+_\d+_\d+/].gsub('_', '-')}/")
 end
 
 # redirect missing to missing page for the latest agenda
@@ -70,9 +75,9 @@ get %r{/(\d\d\d\d-\d\d-\d\d)/(.*)} do |date, path|
   pending = Pending.get(userid)
   initials = pending['initials'] || username.gsub(/[^A-Z]/, '').downcase
 
-  if ASF::Auth::DIRECTORS[userid] or userid == 'test'
+  if userid == 'test' or ASF::Service['board'].members.map(&:id).include? userid
     role = :director
-  elsif %w(clr).include? userid
+  elsif ASF::Service['asf-secretary'].members.map(&:id).include? userid
     role = :secretary
   else
     role = :guest
@@ -88,8 +93,9 @@ get %r{/(\d\d\d\d-\d\d-\d\d)/(.*)} do |date, path|
     initials: initials,
     online: IPC.present,
     role: role,
-    directors: Hash[ASF::Auth::DIRECTORS.map {|id, initials| 
-      [initials, ASF::Person.find(id).public_name.split(' ').first]
+    directors: Hash[ASF::Service['board'].members.map {|person| 
+      initials = person.public_name.gsub(/[^A-Z]/, '').downcase
+      [initials, person.public_name.split(' ').first]
     }]
   }
 
@@ -98,6 +104,7 @@ get %r{/(\d\d\d\d-\d\d-\d\d)/(.*)} do |date, path|
     query: params['q'],
     agenda: agenda,
     parsed: Agenda[agenda][:parsed],
+    digest: Agenda[agenda][:digest],
     etag: Agenda.uptodate(agenda) ? Agenda[agenda][:etag] : nil
   }
 
@@ -105,7 +112,14 @@ get %r{/(\d\d\d\d-\d\d-\d\d)/(.*)} do |date, path|
     agenda.sub('agenda', 'minutes').sub('.txt', '.yml')
   @page[:minutes] = YAML.load(File.read(minutes)) if File.exist? minutes
 
+  @cssmtime = File.mtime('public/stylesheets/app.css').to_i
+
   _html :'main'
+end
+
+# append slash to agenda page if not present
+get %r{^/(\d\d\d\d-\d\d-\d\d)$} do |date|
+  redirect to("/#{date}/")
 end
 
 # posted actions
@@ -192,6 +206,11 @@ get %r{/json/chat/(\d\d\d\d_\d\d_\d\d)} do |date|
   else
     _json []
   end
+end
+
+# historical comments
+get '/json/historical-comments' do
+  _json HistoricalComments.comments
 end
 
 # event stream for server sent events (a.k.a EventSource)

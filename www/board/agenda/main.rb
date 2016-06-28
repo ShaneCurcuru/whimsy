@@ -1,4 +1,4 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
 #
 # Server side setup
@@ -38,6 +38,7 @@ require_relative './models/pending'
 require_relative './models/events'
 require_relative './models/agenda'
 require_relative './models/minutes'
+require_relative './models/comments'
 require_relative './helpers/string'
 
 # if AGENDA_WORK doesn't exist yet, make it

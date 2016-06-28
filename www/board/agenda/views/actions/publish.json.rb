@@ -41,74 +41,43 @@ else
 end
 
 # remove from calendar
-calendar.sub! /^(\s*-\s+#{fdate}\s*\n)/, ''
+calendar.sub! /^(\s*[*-]\s+#{fdate}\s*?\n)/, ''
 
 #Commit the Minutes
-Dir.chdir MINUTES do
-  unless Dir.exist? year.to_s
-    _.system "mkdir #{year}"
-    _.system "svn add #{year}"
+ASF::SVN.update MINUTES, @message, env, _ do |tmpdir|
+  yeardir = File.join(tmpdir, year.to_s).untaint
+  _.system "svn up #{yeardir}"
+
+  unless Dir.exist? yeardir
+    _.system "mkdir #{yeardir}"
+    _.system "svn add #{yeardir}"
   end
 
-  if not File.exist? "#{year}/board_minutes_#{@date}.txt"
-    _.system "cp #{BOARD_PRIVATE}/board_minutes_#{@date}.txt #{year}"
-    _.system "svn add #{year}/board_minutes_#{@date}.txt"
-
-    _.system [
-      'svn', 'commit', '-m', @message, year.to_s,
-      ['--no-auth-cache', '--non-interactive'],
-      (['--username', env.user, '--password', env.password] if env.password)
-    ]
-
-    File.unlink 'svn-commit.tmp' if File.exist? 'svn-commit.tmp'
-
-    unless `svn st`.empty?
-      raise "svn failure #{MINUTES}"
-    end
+  if not File.exist? "#{yeardir}/board_minutes_#{@date}.txt"
+    _.system "cp #{BOARD_PRIVATE}/board_minutes_#{@date}.txt #{yeardir}"
+    _.system "svn add #{yeardir}/board_minutes_#{@date}.txt"
   end
 end
 
 # Update the Calendar
-Dir.chdir BOARD_SITE do
-  if File.read(CALENDAR) != calendar
-    File.open(CALENDAR, 'w') {|fh| fh.write calendar}
-
-    _.system [
-      'svn', 'commit', '-m', @message, File.basename(CALENDAR),
-      ['--no-auth-cache', '--non-interactive'],
-      (['--username', env.user, '--password', env.password] if env.password)
-    ]
-
-    unless `svn st`.empty?
-      raise "svn failure #{BOARD_SITE}"
-    end
+if File.read(CALENDAR) != calendar
+  ASF::SVN.update CALENDAR, @message, env, _ do |tmpdir, old_contents|
+    calendar
   end
 end
 
 # Clean up board directory
-Dir.chdir BOARD_PRIVATE do
-  updated = false
-
-  if File.exist? "board_minutes_#{@date}.txt"
-    _.system "svn rm board_minutes_#{@date}.txt"
-    updated = true
+ASF::SVN.update BOARD_PRIVATE, @message, env, _ do |tmpdir|
+  _.system "svn up #{tmpdir}/board_minutes_#{@date}.txt"
+  if File.exist? "#{tmpdir}/board_minutes_#{@date}.txt"
+    _.system "svn rm #{tmpdir}/board_minutes_#{@date}.txt"
   end
   
-  if File.exist? "board_agenda_#{@date}.txt"
-    _.system "svn mv board_agenda_#{@date}.txt archived_agendas"
-    updated = true
-  end
-
-  if updated
-    _.system [
-      'svn', 'commit', '-m', @message,
-      ['--no-auth-cache', '--non-interactive'],
-      (['--username', env.user, '--password', env.password] if env.password)
-    ]
-
-    unless `svn st`.empty?
-      raise "svn failure: #{BOARD_PRIVATE}"
-    end
+  _.system "svn up #{tmpdir}/board_agenda_#{@date}.txt"
+  if File.exist? "#{tmpdir}/board_agenda_#{@date}.txt"
+    _.system "svn up --depth empty #{tmpdir}/archived_agendas"
+    _.system "svn mv #{tmpdir}/board_agenda_#{@date}.txt " +
+      "#{tmpdir}/archived_agendas"
   end
 end
 

@@ -12,10 +12,25 @@ module ASF
     end
 
     def each
-      auth = ASF::SVN['infra/infrastructure/trunk/subversion/authorization']
+      # TODO - should this read the Git repo directly?
+      auth = ASF::Git.find('infrastructure-puppet')
+      if auth
+        auth += '/modules/subversion_server/files/authorization'
+      else
+        # SVN copy is no longer in use - see INFRA-11452
+        raise Exception.new("Cannot find Git: infrastructure-puppet")
+      end
+
       File.read("#{auth}/#{@file}-authorization-template").
         scan(/^([-\w]+)=(\w.*)$/).each do |pmc, ids|
         yield pmc, ids.split(',')
+      end
+    end
+
+    unless Enumerable.instance_methods.include? :to_h
+      # backwards compatibility for Ruby versions <= 2.0
+      def to_h
+        Hash[self.to_a]
       end
     end
   end

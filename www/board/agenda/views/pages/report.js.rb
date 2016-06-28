@@ -47,6 +47,11 @@ class Report < React
 
       _section do
         _AdditionalInfo item: @@item
+
+        _div.report_info do
+          _h4 'Report Info'
+          _Info item: @@item
+        end
       end
     end
   end
@@ -58,8 +63,8 @@ class Report < React
 
   def componentWillReceiveProps()
     # determine what text filters to run
-    @filters = [self.linebreak, hotlink, self.privates, self.jira]
-    @filters << self.localtime if @@item.title == 'Call to order'
+    @filters = [self.linebreak, self.todo, hotlink, self.privates, self.jira]
+    @filters = [self.localtime, hotlink] if @@item.title == 'Call to order'
     @filters << self.names if @@item.people
     @filters << self.president_attachments if @@item.title == 'President'
 
@@ -85,6 +90,11 @@ class Report < React
   #
   ### filters
   #
+
+  # Highlight todos
+  def todo(text)
+    return text.gsub 'TODO', '<span class="missing">TODO</span>'
+  end
 
   # Break long lines
   def linebreak(text)

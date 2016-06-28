@@ -89,19 +89,11 @@ feature 'report' do
       @message = 'Draft minutes for 2015-02-18'
       @text = draft
 
-      begin
-        eval(File.read('views/actions/draft.json.rb'))
+      eval(File.read('views/actions/draft.json.rb'), nil, 'draft.json.rb')
 
-        file = "#{FOUNDATION_BOARD}/board_minutes_2015_02_18.txt"
-
-        expect(File.exist? file).to be true
-        expect(File.read file).to eq draft
-      ensure
-        if File.exist? file
-          `svn rm #{file}`
-          `svn commit #{file} -m cleanup`
-        end
-      end
+      minutes = @agenda.sub('_agenda_', '_minutes_')
+      expect(@commits).to include(minutes)
+      expect(@commits[minutes]).to eq draft
     end
   end
 

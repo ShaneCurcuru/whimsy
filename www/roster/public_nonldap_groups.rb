@@ -14,34 +14,46 @@
 #       "roster": [
 #         "uid",
 #          ...
-#       ]
+#       ],
+#      "podling": "current" // optional status if same as a podling name
 #     }
 #   },
 # }
 
 require_relative 'public_json_common'
 
-require 'net/http'
-
-file = '/apache/infrastructure-puppet/deployment/modules/subversion_server/files/authorization/asf-authorization-template'
-http = Net::HTTP.new('raw.githubusercontent.com', 443)
-http.use_ssl = true
-body = http.request(Net::HTTP::Get.new(file)).body
-  .sub(/^.*\[groups\]\s*$/m,'')
-  .sub(/^\[\/\].*/m,'')
+pods = Hash[ASF::Podlings.list.map {|podling| [podling.name, podling.status]}]
 
 groups = {}
 
 # find the locally defined groups
-body.scan(/^(\w[^=\s]*)[ \t]*=[ \t]*(\w.*)$/) do |grp, mem|
+ASF::Authorization.new('asf').each do |grp, mem|
   groups[grp] = {
       # we use same syntax as for normal groups
       # this will allow future expansion e.g. if we can flag podlings somehow
-      roster: mem.gsub(/\s/,'').split(/,/).sort.uniq
+      roster: mem.sort.uniq
       }
+  # add podling type entry if there is one
+  groups[grp][:podling] = pods[grp] if pods[grp]
 end
+
+# Not currently used
+#pitgroups = {}
+#
+## find the locally defined groups
+#ASF::Authorization.new('pit').each do |grp, mem|
+#  pitgroups[grp] = {
+#      # we use same syntax as for normal groups
+#      # this will allow future expansion e.g. if we can flag podlings somehow
+#      roster: mem.sort.uniq
+#      }
+#  # add podling type entry if there is one
+#  pitgroups[grp][:podling] = pods[grp] if pods[grp]
+#end
 
 public_json_output(
   # There does not seem to be a useful timestamp here
-  groups: groups,
+  groups: groups
+  # TODO decide how to present the data: separate key or attribute or file
+  #pitgroups: pitgroups
 )

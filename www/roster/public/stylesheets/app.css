@@ -17,6 +17,7 @@ table.wide {color: #000; border-collapse: separate; font-size: 100%}
 .issue, .not-found {color: red; font-weight:bold} 
 .chair {color: green; font-weight:bold} 
 .member {font-weight: bold}
+.editable td:first-child {color: blue}
 
 thead:hover th.sorting-desc:after {content: ' \25bc'}
 thead:hover th.sorting-asc:after {content: ' \25b2'}
@@ -46,4 +47,26 @@ button.btn {margin: 0 8px}
 
 #main > span > ul {
   margin-top: 1em;
+}
+
+pre.wide {padding: 0 8px; width: 60em; overflow-x: hidden; margin: 6px 0}
+pre.wide:hover {overflow-x: scroll}
+
+form.inline {display: inline}
+form.inline div label {min-width: 7em; text-align: right}
+form.inline div input {min-width: 20em}
+form.inline button {margin-left: 10em}
+form.inline textarea {height: 20em; width: 60em}
+
+input:disabled[type=submit] {cursor: not-allowed}
+
+.modal textarea {width: 100%; height: 30em}
+
+@media screen and (min-width: 768px) {
+  .wide-form .modal-dialog {
+    width: 80%;
+  }
+  .wide-form .modal-footer {
+    margin-top: 0
+  }
 }

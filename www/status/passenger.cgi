@@ -1,4 +1,5 @@
 #!/usr/local/bin/ruby2.3.0
+# must agree with the Ruby version in PassengerDefaultRuby in passenger.conf
 
 require 'bundler/setup'
 
@@ -16,6 +17,7 @@ unless user
   exit
 end
 
+# Must agree with the passenger Ruby version as above
 output, error, status = Open3.capture3 '/usr/local/bin/ruby2.3.0',
   Gem.bin_path('passenger', 'passenger-status')
 

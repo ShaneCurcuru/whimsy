@@ -1,10 +1,13 @@
-#!/usr/bin/ruby
+#!/usr/bin/env ruby
 
 #
 # Server side router/controllers
 #
 
 require 'whimsy/asf'
+
+require 'mail'
+require 'tmpdir'
 
 require 'wunderbar/sinatra'
 require 'wunderbar/bootstrap/theme'
@@ -17,11 +20,19 @@ require 'ruby2js/filter/require'
 require_relative 'banner'
 require_relative 'models'
 
+ASF::Mail.configure
+
 get '/' do
-  @committers = ASF::Person.list
-  @committees = ASF::Committee.list
-  @members = ASF::Member.list.keys - ASF::Member.status.keys
-  _html :index
+  if env['REQUEST_URI'].end_with? '/'
+    @committers = ASF::Person.list
+    @committees = ASF::Committee.list
+    @members = ASF::Member.list.keys - ASF::Member.status.keys
+    @groups = Group.list
+    @podlings = ASF::Podling.to_h.values
+    _html :index
+  else
+    redirect to('/')
+  end
 end
 
 get '/committer/' do
@@ -29,7 +40,7 @@ get '/committer/' do
 end
 
 get '/committer' do
-  call env.merge('PATH_INFO' => '/committer/')
+  redirect to('/committer/')
 end
 
 get '/committee/' do
@@ -39,7 +50,7 @@ get '/committee/' do
 end
 
 get '/committee' do
-  call env.merge('PATH_INFO' => '/committee/')
+  redirect to('/committee/')
 end
 
 get '/committer/index.json' do
@@ -56,12 +67,12 @@ get '/committer/index.json' do
 end
 
 get '/committee/:name.json' do |name|
-  _json Committee.serialize(name)
+  _json Committee.serialize(name, env)
 end
 
 get '/committee/:name' do |name|
   @auth = Auth.info(env)
-  @committee = Committee.serialize(name)
+  @committee = Committee.serialize(name, env)
   pass unless @committee
   _html :committee
 end
@@ -71,9 +82,30 @@ get '/committer/:name.json' do |name|
 end
 
 get '/committer/:name' do |name|
+  @auth = Auth.info(env)
   @committer = Committer.serialize(name, env)
   pass unless @committer
   _html :committer
+end
+
+post '/committer/:userid/:file' do |name, file|
+  _json :"actions/#{params[:file]}"
+end
+
+get '/group/:name.json' do |name|
+  _json Group.serialize(name)
+end
+
+get '/group/:name' do |name|
+  @group = Group.serialize(name)
+  pass unless @group
+  _html :group
+end
+
+get '/group/' do
+  @groups = Group.list
+  @podlings = ASF::Podling.to_h
+  _html :groups
 end
 
 # member list
@@ -83,6 +115,16 @@ end
 
 get '/members.json' do
   _json Hash[ASF.members.map {|person| [person.id, person.public_name]}.sort]
+end
+
+# member list
+get '/podlings' do
+  attic = ASF::SVN['asf/attic/site/xdocs/projects']
+  @attic = Dir["#{attic}/*.xml"].map {|file| File.basename(file, '.xml')}
+  @committees = ASF::Committee.list.map(&:id)
+  @podlings = ASF::Podling.list
+
+  _html :podlings
 end
 
 # posted actions

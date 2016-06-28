@@ -6,15 +6,15 @@ require 'thread'
 module ASF
   module Auth
     DIRECTORS = {
-      'rbowen'      => 'rb',
       'curcuru'     => 'sc',
       'bdelacretaz' => 'bd',
+      'isabel'      => 'id',
+      'marvin'      => 'mh',
       'jim'         => 'jj',
       'mattmann'    => 'cm',
-      'ke4qqq'      => 'dn',
       'brett'       => 'bp',
-      'rubys'       => 'sr',
-      'gstein'      => 'gs'
+      'gstein'      => 'gs',
+      'markt'       => 'mt'
     }
 
     # decode HTTP authorization, when present
@@ -59,8 +59,9 @@ module ASF
     # 'use' the following class in config.ru to limit access
     # to the application to ASF members and officers and the accounting group.
     class MembersAndOfficers < Rack::Auth::Basic
-      def initialize(app)
+      def initialize(app, &block)
         super(app, "ASF Members and Officers", &proc {})
+        @block = block 
       end
 
       def call(env)
@@ -68,9 +69,9 @@ module ASF
 
         person = ASF::Auth.decode(env)
 
-        authorized ||= DIRECTORS[env.user]
         authorized ||= person.asf_member?
         authorized ||= ASF.pmc_chairs.include? person
+        authorized ||= @block.call(env) if @block
 
         if not authorized
           accounting = ASF::Authorization.new('pit').

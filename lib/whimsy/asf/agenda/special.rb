@@ -23,7 +23,7 @@ class ASF::Board::Agenda
       title.sub! /\sthe\s/, ' '
       title.sub! /\sApache\s/, ' '
       title.sub! /\sCommittee\s/, ' '
-      title.sub! /\sProject(\s|$)/, '\1'
+      title.sub! /\sProject(\s|$)/i, '\1'
       title.sub! /\sPMC(\s|$)/, '\1'
       title.sub! /\s\(.*\)$/, ''
 
@@ -39,6 +39,21 @@ class ASF::Board::Agenda
       if text.sub(/s+\Z/,'').scan(/^ *\S/).map(&:length).min != 8
         attrs['warnings'] << 'Resolution is not indented 7 spaces'
       end
+
+      title_checks = {
+        /^Establish/i => /^Establish the Apache .* Project$/,
+        /^Change.*Chair/i => /^Change the Apache .* Project Chair$/,
+        /^Terminate/i => /^Terminate the Apache .* Project$/,
+      }
+
+      title_checks.each do |select, match|
+        if fulltitle =~ select and fulltitle !~ match
+          attrs['warnings'] << 
+            "Non-standard title wording: #{fulltitle.inspect}; " +
+            "expected #{match.inspect}"
+        end
+      end
+
       attrs.delete 'indent'
       attrs.delete 'warnings' if attrs['warnings'].empty?
 
@@ -49,9 +64,9 @@ class ASF::Board::Agenda
 
       people = text.scan(/#{list_item}\((#{asfid})\)\s*$/)
       people += text.scan(/#{list_item}\((#{asfid})(?:@|\s*at\s*)
-        (?:\.\.\.|apache\.org)\)\s*$/x)
+        (?:\.\.\.|apache\.org|apache\sdot\sorg)\)\s*$/xi)
       people += text.scan(/#{list_item}<(#{asfid})(?:@|\s*at\s*)
-        (?:\.\.\.|apache\.org|apache\sdot\sorg)>\s*$/x)
+        (?:\.\.\.|apache\.org|apache\sdot\sorg)>\s*$/xi)
 
       whimsy = 'https://whimsy.apache.org'
       if title =~ /Change (.*?) Chair/ or title =~ /Terminate (\w+)$/
@@ -87,10 +102,25 @@ class ASF::Board::Agenda
             "#{whimsy}/board/minutes/#{name.gsub(/\W/,'_')}"
           if text =~ /FURTHER RESOLVED, that\s+([^,]*?),?\s+be\b/
             chairname = $1.gsub(/\s+/, ' ').strip
-            chair = people.find {|person| person.first == chairname}
-            attrs['chair'] = (chair ? chair.last : nil)
-            unless chair and chair.last
-              attrs['warnings'] ||= ['Chair not found in resolution'] 
+
+            if chairname =~ /\s\(([-.\w]+)\)$/
+              # if chair's id is present in parens, use that value
+              attrs['chair'] = $1 unless $1.empty?
+              chairname.sub! /\s+\(.*\)$/, ''
+            else
+              # match chair's name against people in the committee
+              chair = people.find {|person| person.first == chairname}
+              attrs['chair'] = (chair ? chair.last : nil)
+            end
+
+            unless people.include? [chairname, attrs['chair']]
+              if people.empty?
+                attrs['warnings'] ||= ['Unable to locate PMC email addresses'] 
+              elsif attrs['chair']
+                attrs['warnings'] ||= ['Chair not member of PMC'] 
+              else
+                attrs['warnings'] ||= ['Chair not found in resolution'] 
+              end
             end
           else
             attrs['warnings'] ||= ['Chair not found in resolution'] 

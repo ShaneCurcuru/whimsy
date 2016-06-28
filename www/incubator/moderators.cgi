@@ -1,4 +1,6 @@
-#!/usr/bin/ruby1.9.1
+#!/usr/bin/env ruby
+
+$LOAD_PATH.unshift File.realpath(File.expand_path('../../../lib', __FILE__))
 require 'wunderbar'
 require 'whimsy/asf'
 require 'nokogiri'
@@ -10,7 +12,7 @@ unless user.asf_member? or ASF::Committee['incubator'].members.include? user
   exit
 end
 
-SUBSCRIPTIONS = '/home/apmail/subscriptions/incubator-mods'
+SUBSCRIPTIONS = '/srv/subscriptions/incubator-mods'
 PODLINGS = "#{ASF::SVN['asf/incubator/public/trunk/content']}/podlings.xml"
 
 exceptions = {

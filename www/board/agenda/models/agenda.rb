@@ -3,9 +3,13 @@
 # Most of the heavy lifting is done by ASF::Board::Agenda in the whimsy-asf
 # gem.  This class is mainly focused on caching the results.
 #
-class Agenda
-  @@mutex = Mutex.new
+# This code also maintains a "working copy" of agendas when updates are
+# made that may not yet be reflected in the local svn checkout.
+#
 
+require 'digest'
+
+class Agenda
   def self.[](file)
     IPC[file]
   end
@@ -15,9 +19,21 @@ class Agenda
   end
 
   def self.update_cache(file, path, contents, quick)
-    parsed = ASF::Board::Agenda.parse(contents, quick)
-    Agenda[file] = {mtime: (quick ? -1 : File.mtime(path)), parsed: parsed}
-    IPC.post type: :agenda, file: file unless quick
+    update = {
+      mtime: (quick ? -1 : File.mtime(path)),
+      parsed: ASF::Board::Agenda.parse(contents, quick),
+      digest: Digest::SHA256.base64digest(contents)
+    }
+
+    # update cache if there wasn't a previous entry, the digest changed,
+    # or the previous entry was the result of a 'quick' parse.
+    current = IPC[file]
+    if not current or current[:digest] != update[:digest] or
+      current[:mtime].to_i <= 0
+    then
+      IPC[file] = update
+      IPC.post type: :agenda, file: file, digest: update[:digest] unless quick
+    end
   end
 
   def self.uptodate(file)
@@ -36,8 +52,15 @@ class Agenda
     
     return unless File.exist? path
 
+    # Does the working copy have more recent data?
+    working_copy = File.join(AGENDA_WORK, file)
+    if File.size?(working_copy) and File.mtime(working_copy) > File.mtime(path)
+      path = working_copy
+    end
+
     if Agenda[file][:mtime] != File.mtime(path)
-      @@mutex.synchronize do
+      File.open(working_copy, File::RDWR|File::CREAT, 0644) do |work_file|
+        work_file.flock(File::LOCK_EX)
         if Agenda[file][:mtime] != File.mtime(path)
           self.update_cache(file, path, File.read(path), mode == :quick)
         end
@@ -57,7 +80,7 @@ class Agenda
 
   # update agenda file in SVN
   def self.update(file, message, retries=20, &block)
-    commit_rc = 999
+    commit_rc = 0
 
     # Create a temporary work directory
     dir = Dir.mktmpdir
@@ -70,8 +93,12 @@ class Agenda
       auth = [['--username', env.user, '--password', env.password]]
     end
 
-    @@mutex.synchronize do
-      file.untaint if file =~ /\Aboard_\w+_[\d_]+\.txt\Z/
+    file.untaint if file =~ /\Aboard_\w+_[\d_]+\.txt\Z/
+
+    working_copy = File.join(AGENDA_WORK, file)
+
+    File.open(working_copy, File::RDWR|File::CREAT, 0644) do |work_file|
+      work_file.flock(File::LOCK_EX)
 
       # capture current version of the file
       path = File.join(FOUNDATION_BOARD, file)
@@ -95,42 +122,40 @@ class Agenda
           IO.write(path, output)
           commit_rc = _.system ['svn', 'commit', auth, path, '-m', message]
           @@seen[path] = File.mtime(path)
+        end
+      else
+        output = IO.read(path)
+      end
+
+      if commit_rc == 0
+        # update the work file, and optionally the cache, if successful
+        work_file.rewind
+
+        if output != baseline
+          # update the cache if the file has changed
+          self.update_cache(file, path, output, ENV['RACK_ENV'] == 'test')
+          work_file.write(output)
+          work_file.flush
+        end
+
+        work_file.truncate(work_file.pos)
+      else
+        # if not successful, retry
+        if retries > 0
+          sleep rand(41-retries*2)*0.1 if retries <= 20
+          update(file, message, retries-1, &block)
         else
-          commit_rc = 0
+          raise Exception.new("svn commit failed")
         end
       end
 
-      # update the file in question; update output if mtime changed
-      # (it may not: during testing, commits are prevented)
-      path = File.join(FOUNDATION_BOARD, file)
-      File.open(path, 'r') do |fh|
-        fh.flock(File::LOCK_EX)
-        _.system ['svn', 'cleanup', FOUNDATION_BOARD]
-        mtime = File.mtime(path) if output
-        _.system ['svn', 'update', auth, path]
-        output = IO.read(path) if mtime != File.mtime(path)
-      end
-
-      # reparse the file if the output changed
-      if output != baseline or mtime != File.mtime(path)
-        self.update_cache(file, path, output, ENV['RACK_ENV'] == 'test')
-      end
-
-      # return the result
+      # return the result in the response
       _.method_missing(:_agenda, Agenda[file][:parsed])
+      _.method_missing(:_digest, Agenda[file][:digest])
     end
 
   ensure
     FileUtils.rm_rf dir
-
-    unless commit_rc == 0
-      if retries > 0
-        sleep rand(41-retries*2)*0.1 if retries <= 20
-        update(file, message, retries-1, &block)
-      else
-        raise Exception.new("svn commit failed")
-      end
-    end
   end
 
   # listen for changes to agenda files

@@ -11,7 +11,7 @@ class PMCCommitters < React
     then
       _p 'All committers are members of the PMC'
     else
-      _h2 'Committers'
+      _h2.committers! 'Committers'
       _table.table.table_hover do
         _thead do
           _tr do
@@ -85,8 +85,14 @@ class PMCCommitter < React
 
   def render
     _tr onDoubleClick: self.select do
-      _td {_a @@person.id, href: "committer/#{@@person.id}"}
-      _td @@person.name
+
+      if @@committee.asfmembers.include? @@person.id
+        _td { _b { _a @@person.id, href: "committer/#{@@person.id}"} }
+        _td { _b @@person.name }
+      else
+        _td { _a @@person.id, href: "committer/#{@@person.id}" }
+        _td @@person.name
+      end
 
       if @state == :open
         _td data_id: @@person.id do 

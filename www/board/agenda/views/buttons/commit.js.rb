@@ -112,12 +112,16 @@ class Commit < React
   def click(event)
     @disabled = true
     post 'commit', message: @message, initials: Pending.initials do |response|
-      Agenda.load response.agenda
+      Agenda.load response.agenda, response.digest
       Pending.load response.pending
       @disabled = false
-      jQuery('#commit-form').modal(:hide)
-      document.body.classList.remove('modal-open')
-      jQuery('.modal-backdrop').remove();
+
+      # delay jQuery updates to give React a chance to make updates first
+      setTimeout 300 do
+        jQuery('#commit-form').modal(:hide)
+        document.body.classList.remove('modal-open')
+        jQuery('.modal-backdrop').remove();
+      end
     end
   end
 end

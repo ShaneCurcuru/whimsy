@@ -7,10 +7,13 @@
 class Agenda
   @@index = []
   @@etag = nil
+  @@digest = nil
 
   # (re)-load an agenda, creating instances for each item, and linking
   # each instance to their next and previous items.
-  def self.load(list)
+  def self.load(list, digest)
+    return unless list
+    @@digest = digest
     @@index.clear()
     prev = nil
 
@@ -51,10 +54,10 @@ class Agenda
   end
 
   # fetch agenda if etag is not supplied
-  def self.fetch(etag)
+  def self.fetch(etag, digest)
     if etag
       @@etag = etag
-    else
+    elsif digest != @@digest or not @@etag
       xhr = XMLHttpRequest.new()
       xhr.open('GET', "../#{@@date}.json", true)
       xhr.setRequestHeader('If-None-Match', @@etag) if @@etag
@@ -68,6 +71,8 @@ class Agenda
       end
       xhr.send()
     end
+
+    @@digest = digest
   end
 
   # return the entire agenda
@@ -129,21 +134,7 @@ class Agenda
 
   # return comments as an array of individual comments
   def comments
-    results = []
-    return results unless @comments
-
-    comment = ''
-    @comments.split("\n").each do |line|
-      if line =~ /^\S/
-        results << comment unless comment.empty?
-        comment = line
-      else
-        comment += "\n" + line
-      end
-    end
-
-    results << comment unless comment.empty?
-    return results
+    splitComments(@comments)
   end
 
   # item's comments excluding comments that have been seen before
@@ -175,10 +166,22 @@ class Agenda
     end
   end
 
+  def special_orders
+    items = []
+
+    if @attach =~ /^[A-Z]+$/
+      Agenda.index.each do |item|
+        items << item if item.attach =~ /^7/ and item.roster == @roster
+      end
+    end
+
+    return items
+  end
+
   def ready_for_review(initials)
-    return defined? @approved and not self.missing and
-      not @approved.include? initials and 
-      not (@flagged_by and @flagged_by.include? initials)
+    return defined?(@approved) && !self.missing &&
+      !@approved.include?(initials) &&
+      !(@flagged_by && @flagged_by.include?(initials))
   end
 
   # the default view to use for the agenda as a whole
@@ -196,6 +199,7 @@ class Agenda
 
     if Server.role == :secretary 
       if Server.drafts.include? Agenda.file.sub('agenda', 'minutes')
+        list << {button: SendFeedback}
         list << {form: PublishMinutes}
       elsif Minutes.ready_to_post_draft
         list << {form: DraftMinutes}
@@ -225,6 +229,11 @@ class Agenda
     "board_agenda_#{@@date.gsub('-', '_')}.txt"
   end
 
+  # get the digest of the file associated with this agenda
+  def self.digest
+    @@digest
+  end
+
   # previous link for the agenda index page
   def self.prev
     result = {title: 'Help', href: 'help'}
@@ -248,7 +257,7 @@ class Agenda
       date = agenda[/(\d+_\d+_\d+)/, 1].gsub('_', '-')
 
       if date > @@date and (result.title == 'Help' or date < result.title)
-	      result = {title: date, href: "../#{date}/"}
+        result = {title: date, href: "../#{date}/"}
       end
     end
 
@@ -391,8 +400,12 @@ class Agenda
         then
           list << {form: PublishMinutes}
         end
-      elsif @title == 'Adjournment' and Minutes.ready_to_post_draft
-        list << {form: DraftMinutes}
+      elsif @title == 'Adjournment' 
+        if Minutes.ready_to_post_draft
+          list << {form: DraftMinutes}
+        elsif Server.drafts.include? Agenda.file.sub('agenda', 'minutes')
+          list << {button: SendFeedback}
+        end
       end
     end
 
@@ -436,7 +449,7 @@ class Agenda
 end
 
 Events.subscribe :agenda do |message|
-  Agenda.fetch(nil) if message.file == Agenda.file
+  Agenda.fetch(nil, message.digest) if message.file == Agenda.file
 end
 
 Events.subscribe :server do |message|

@@ -11,7 +11,6 @@ feature 'server actions' do
   before :each do
     @test_data = IO.read('test/work/data/test.yml')
     @test_mins = IO.read('test/work/data/board_minutes_2015_02_18.yml')
-    @transcript = ''
     @cleanup = []
   end
 
@@ -335,7 +334,7 @@ feature 'server actions' do
       @reminder = 'reminder1'
       response = eval(File.read('views/actions/reminder-text.json.rb'))
       expect(response[:subject]).to \
-        eq('ASF Board Report - Initial Reminder for February 2015')
+        eq('ASF Board Report for [project] - Initial Reminder for February 2015')
       expect(response[:body]).to match(/It is an initial reminder/)
       expect(response[:body]).to \
         match(/the deadline for\ssubmitting your report is 1 full week/)
@@ -346,7 +345,7 @@ feature 'server actions' do
       @reminder = 'reminder2'
       response = eval(File.read('views/actions/reminder-text.json.rb'))
       expect(response[:subject]).to \
-        eq('ASF Board Report for February 2015 is now due')
+        eq('ASF Board Report for February 2015 is now due from [project]')
       expect(response[:body]).to match(/These reports are\snow due/)
       expect(response[:body]).to \
         match(/The meeting is scheduled for Wed, 18 Feb 2015 at 10:30 PST\./)
@@ -370,43 +369,11 @@ feature 'server actions' do
       File.unlink 'test/work/data/test.bak'
     end
 
-    @cleanup.each do |file| 
-      Agenda[File.basename(file)].replace :mtime=>0
+    if @commits
+      @commits.each do |name, contents| 
+        Agenda[name].replace :mtime=>0
+        File.unlink "#{AGENDA_WORK}/#{name}"
+      end
     end
-  end
-
-  # 
-  # administrivia
-  #
-
-  # wunderbar environment
-  def _
-    self
-  end
-
-  # sinatra environment
-  def env
-    Struct.new(:user, :password).new('test', nil)
-  end
-
-  # capture wunderbar 'json' output methods
-  def method_missing(method, *args, &block)
-    if method =~ /^_(\w+)$/ and args.length == 1
-      instance_variable_set "@#$1", args.first
-    else
-      super
-    end
-  end
-
-  # run system commands, appending output to transcript.
-  # intercept commits, adding the files to the cleanup list
-  def system(*args)
-    args.flatten!
-    if args[1] == 'commit'
-      @cleanup <<= args[2]
-    else
-      @transcript += `#{Shellwords.join(args)}`
-    end
-    0
   end
 end

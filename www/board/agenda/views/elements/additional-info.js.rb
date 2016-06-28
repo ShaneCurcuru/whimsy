@@ -31,11 +31,44 @@ class AdditionalInfo < React
     end
 
     # posted comments
-    unless @@item.comments.empty?
+    history = HistoricalComments.find(@@item.title)
+    if not @@item.comments.empty? or (history and not @prefix)
       _h4 'Comments', id: "#{@prefix}comments"
       @@item.comments.each do |comment|
         _pre.comment do
           _Text raw: comment, filters: [hotlink]
+        end
+      end
+
+      # historical comments
+      if history and not @prefix
+        for date in history
+          next if Agenda.file == "board_agenda_#{date}.txt"
+
+          _h5.history do
+            _span "\u2022 "
+            _a date.gsub('_', '-'),
+              href: HistoricalComments.link(date, @@item.title)
+            _span ': '
+
+            # link to mail archive for feedback thread
+            if date > '2016_04' # when feedback emails were first started
+              # compute date range: from date of that meeting to now
+              dfr = date.gsub('_', '-')
+              dto = Date.new(Date.now()).toISOString()[0...10]
+
+              _a '(thread)', 
+                href: 'https://lists.apache.org/list.html?board@apache.org&' +
+                  "d=dfr=#{dfr}|dto=#{dto}&header_subject=" +
+                  "'Board%20feedback%20on%20#{dfr}%20#{@@item.title}%20report'"
+            end
+          end
+
+          splitComments(history[date]).each do |comment|
+            _pre.comment do
+              _Text raw: comment, filters: [hotlink]
+            end
+          end
         end
       end
     end
@@ -52,6 +85,17 @@ class AdditionalInfo < React
         _Link text: 'Action Items', href: 'Action-Items'
       end
       _ActionItems item: @@item, filter: {pmc: @@item.title}
+    end
+
+    unless @@item.special_orders.empty?
+      _h4 'Special Orders', id: "#{@prefix}orders"
+      _ul do
+        @@item.special_orders.each do |resolution|
+          _li do
+            _Link text: resolution.title, href: resolution.href
+          end
+        end
+      end
     end
 
     # minutes

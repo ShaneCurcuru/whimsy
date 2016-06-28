@@ -76,9 +76,6 @@ file '/home/vagrant/bin/checkout-svn' do
     update officers \\
       https://svn.apache.org/repos/private/foundation/officers files
 
-    update authorization \\
-      https://svn.apache.org/repos/infra/infrastructure/trunk/subversion/authorization files
-
   EOF
 end
 
@@ -106,7 +103,7 @@ file '/home/vagrant/bin/get-cert' do
   group "vagrant"
   mode 0755
   content <<-EOF.gsub(/^    /,'')
-    #!/usr/bin/ruby
+    #!/usr/bin/env ruby
     output = `ssh ${AVAILID:-#{node.user}}@minotaur.apache.org openssl s_client -connect \\
               minotaur.apache.org:636 -showcerts < /dev/null 2> /dev/null`
     File.open("asf-ldap-client.pem", 'w') do |file|

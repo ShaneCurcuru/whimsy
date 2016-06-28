@@ -4,7 +4,6 @@
 #
 # {
 #  "last_updated": "2015-11-29 23:45:50 UTC", // date of members.txt
-#  "gem_version": "0.0.75",
 #  "code_version": "2016-02-02 17:20:38 UTC",
 #  "members": [
 #    "m1",
@@ -20,39 +19,15 @@
 #
 #
 #
-require 'bundler/setup'
 
-require 'json'
-require 'whimsy/asf'
+require_relative 'public_json_common'
 
-GEMVERSION = Gem.loaded_specs['whimsy-asf'].version.to_s rescue nil
-  # rescue is to allow for running with local library rather than a Gem
 CODEVERSION = ASF.library_mtime rescue nil
-
-# parse arguments for output file name
-if ARGV.length == 0 or ARGV.first == '-'
-  output = STDOUT
-else
-  # exit quickly if there has been no change
-  if File.exist? ARGV.first
-    source = "#{ASF::SVN['private/foundation']}/members.txt"
-    lib = File.expand_path('../../../lib', __FILE__)
-    mtime = Dir["#{lib}/**/*"].map {|file| File.mtime(file)}.max
-    mtime = [mtime, File.mtime(source), File.mtime(__FILE__)].max
-    if File.mtime(ARGV.first) >= mtime
-      previous_results = JSON.parse(File.read(ARGV.first)) rescue {}
-      exit 0 if previous_results['gem_version'] == GEMVERSION
-    end
-  end
-
-  output = File.open(ARGV.first, 'w')
-end
 
 # gather member info
 
 info = {
     last_updated: (ASF::Member.svn_change rescue nil),
-    gem_version: GEMVERSION,
     code_version: CODEVERSION
 }
 
@@ -72,5 +47,4 @@ end
 info[:members].sort!
 info[:ex_members] = Hash[info[:ex_members].sort]
 
-output.puts JSON.pretty_generate(info)
-output.close
+public_json_output(info)

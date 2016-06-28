@@ -3,6 +3,7 @@ class Committer
     response = {}
 
     person = ASF::Person.find(id)
+    person.reload!
     return unless person.attrs['cn']
 
     response[:id] = id
@@ -24,29 +25,92 @@ class Committer
 
     response[:mail] = person.all_mail
 
-    if person.pgp_key_fingerprints and not person.pgp_key_fingerprints.empty?
+    unless person.pgp_key_fingerprints.empty?
       response[:pgp] = person.pgp_key_fingerprints 
+    end
+
+    unless person.ssh_public_keys.empty?
+      response[:ssh] = person.ssh_public_keys
+    end
+
+    if person.attrs['asf-sascore']
+      response[:sascore] = person.attrs['asf-sascore'].first
+    end
+
+    if person.attrs['githubUsername']
+      response[:githubUsername] = person.githubUsername
     end
 
     response[:urls] = person.urls unless person.urls.empty?
 
-    response[:groups] = person.groups.map(&:name)
-
     response[:committees] = person.committees.map(&:name)
 
-    if ASF::Person.find(env.user).asf_member?
-      member = {}
-
-      if person.asf_member?
-	member[:info] = person.members_txt
-	member[:status] = ASF::Member.status[id] || 'Active'
+    response[:groups] = person.services
+    response[:committer] = []
+    committees = ASF::Committee.list.map(&:id)
+    person.groups.map(&:name).each do |group|
+      if committees.include? group
+        unless response[:committees].include? group
+          response[:committer] << group 
+        end
       else
-        if person.member_nomination
-	  member[:nomination] = person.member_nomination
-	end
+        response[:groups] << group
+      end
+    end
+
+    ASF::Authorization.new('asf').each do |group, members|
+      response[:groups] << group if members.include? id
+    end
+
+    ASF::Authorization.new('pit').each do |group, members|
+      response[:groups] << group if members.include? id
+    end
+
+    response[:committees].sort!
+    response[:groups].sort!
+    response[:committer].sort!
+
+    if ASF::Person.find(env.user).asf_member?
+      response[:forms] = {}
+
+      if person.icla and person.icla.claRef # Not all people have iclas
+        iclas = ASF::SVN['private/documents/iclas']
+        claRef = person.icla.claRef.untaint
+        if File.exist? File.join(iclas, claRef + '.pdf')
+          response[:forms][:icla] = claRef + '.pdf'
+        elsif Dir.exist? File.join(iclas, claRef)
+          response[:forms][:icla] = claRef + '/'
+        end
       end
 
-      response[:member] = member
+      member = {}
+
+      if person.asf_member? # TODO is this the correct check? it includes people in members unix group
+        member[:info] = person.members_txt
+        member[:status] = ASF::Member.status[id] || 'Active'
+
+        if person.icla # not all members have iclas
+          apps = ASF::SVN['private/documents/member_apps']
+          [
+            person.icla.legal_name, 
+            person.icla.name,
+            member[:info].split("\n").first.strip
+          ].uniq.each do |name|
+            next unless name
+            memapp = name.downcase.gsub(/\s/, '-').untaint
+            if apps and File.exist? File.join(apps, memapp + '.pdf')
+              response[:forms][:member] = memapp + '.pdf'
+            end
+          end
+        end
+      else
+        if person.member_nomination
+          member[:nomination] = person.member_nomination
+        end
+      end
+
+      response[:member] = member unless member.empty?
+
     end
 
     response
