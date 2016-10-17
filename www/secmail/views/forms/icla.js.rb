@@ -6,13 +6,24 @@ class ICLA < React
   end
 
   def render
-    _form action: '../../actions/icla', method: 'post', onSubmit: self.file do
+    _h4 'ICLA'
+
+    _div.buttons do
+      _button 'clear form', disabled: @filed,
+        onClick: -> {@pubname = @realname = @email = @filename = ''}
+    end
+
+    _form method: 'post', action: '../../tasklist/icla', target: 'content' do
+      _input type: 'hidden', name: 'message'
+      _input type: 'hidden', name: 'selected'
+      _input type: 'hidden', name: 'signature', value: @@signature
+
       _table.form do
         _tr do
           _th 'Real Name'
           _td do
             _input name: 'realname', value: @realname, required: true,
-               disabled: @filed
+               disabled: @filed, onChange: self.changeRealName
           end
         end
 
@@ -36,48 +47,37 @@ class ICLA < React
           _th 'File Name'
           _td do
             _input name: 'filename', value: @filename, required: true,
-              pattern: '[a-zA-Z][-\w]+(\.[a-z]+)?', onFocus: self.genfilename,
-              disabled: @filed
+              pattern: '[a-zA-Z][-\w]+(\.[a-z]+)?', disabled: @filed
           end
         end
       end
 
-      _input.btn.btn_primary value: 'File', type: 'submit', ref: 'file'
-    end
-
-    _form do
       _table.form do
         _tr do
           _th 'User ID'
           _td do
-            _input name: 'user', value: @user, onBlur: self.validate_userid
+            _input name: 'user', value: @user, onBlur: self.validate_userid,
+              disabled: @filed, pattern: '^[a-z][-a-z0-9_]+$'
           end
         end
 
         _tr do
-          _th 'PMC'
+          _th 'Project'
           _td do
-            _input name: 'pmc', value: @pmc
-          end
-        end
-
-        _tr do
-          _th 'Podling'
-          _td do
-            _input name: 'podling', value: @podling
+            _input name: 'project', value: @project, disabled: @filed
           end
         end
 
         _tr do
           _th 'Vote Link'
           _td do
-            _input type: 'url', name: 'votelink', value: @votelink
+            _input type: 'url', name: 'votelink', value: @votelink,
+              disabled: @filed
           end
         end
       end
 
-      _button.btn.btn_primary 'Request Account', ref: 'acreq',
-        onClick: self.request_account
+      _input.btn.btn_primary value: 'File', type: 'submit', ref: 'file'
     end
   end
 
@@ -93,8 +93,17 @@ class ICLA < React
     end
 
     @realname = name
+    @pubname = name
+    @filename = self.genfilename(name)
     @email = @@headers.from
     self.componentDidUpdate()
+
+    # watch for status updates
+    window.addEventListener 'message', self.status_update
+  end
+
+  def componentWillUnmount()
+    window.removeEventListener 'message', self.status_update
   end
 
   # as fields change, enable/disable the associated buttons and adjust
@@ -105,37 +114,50 @@ class ICLA < React
       document.querySelector("input[name=#{name}]").validity.valid
     end
 
-    $file.disabled = !valid or @filed or @submitted
-
     # new account request form
-    valid = true
-    %w(user pmc podling votelink).each do |name|
+    %w(user project votelink).each do |name|
       input = document.querySelector("input[name=#{name}]")
       input.required = @user && !@user.empty?
-      input.required = false if name == 'podling' and @pmc != 'incubator'
       valid &= input.validity.valid
     end
 
-    $acreq.disabled = !valid or !@user or !@filed
+    $file.disabled = !valid or @filed or @submitted
+
+    # wire up form
+    jQuery('form')[0].addEventListener('submit', self.file)
+    jQuery('input[name=message]').val(window.parent.location.pathname)
+    jQuery('input[name=selected]').val(@@selected)
+
+    # Safari autocomplete workaround: trigger change on leaving field
+    # https://github.com/facebook/react/issues/2125
+    if navigator.userAgent.include? "Safari"
+      Array(document.getElementsByTagName('input')).each do |input|
+        input.addEventListener('blur', self.onblur)
+      end
+    end
   end
 
-  # generate file name from the public name
-  def genfilename()
-    @filename ||= asciize(@pubname.strip()).downcase().gsub(/\W/, '-')
+  def changeRealName(event)
+    @realname = event.target.value;
+    @filename = self.genfilename(event.target.value)
+  end
+
+  # generate file name from the real name
+  def genfilename(realname)
+    return asciize(realname.strip()).downcase().gsub(/\W+/, '-')
+  end
+
+  # when leaving an input field, trigger change event (for Safari)
+  def onblur(event)
+    jQuery(event.target).trigger(:change)
   end
 
   # handle ICLA form submission
   def file(event)
-    @submitted = true
-
-    @@submit.call(event).then {|response|
+    setTimeout 0 do
+      @submitted = true
       @filed = true
-      @submitted = false
-      alert response.result
-    }.catch {
-      @filed = false
-      @submitted = false
-    }
+    end
   end
 
   # validate userid is available
@@ -150,13 +172,9 @@ class ICLA < React
     }
   end
 
-  # show new account request window with fields filled in
-  def request_account()
-    params = %w{email user pmc podling votelink}.map do |name|
-      "#{name}=#{encodeURIComponent(self.state[name])}"
-    end
-
-    window.parent.frames.content.location.href = 
-      "https://id.apache.org/acreq/members/?" + params.join('&')
+  # when tasks complete (or are aborted) reset form
+  def status_update(event)
+    @submitted = false
+    @filed = false
   end
 end

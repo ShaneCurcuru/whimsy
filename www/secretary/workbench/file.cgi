@@ -65,7 +65,8 @@ def update_pending fields, dest
 
   # copy email field
   fields['email'] ||= fields['gemail'] || fields['cemail'] ||
-                      fields['nemail'] || fields['memail']
+                      fields['nemail'] || fields['memail'] ||
+                      fields['iemail'] || fields['uemail'] || fields['pemail']
   fields.delete('email') unless fields['email']
   
   # Concatenate the fields to the pending list and write to disk
@@ -140,7 +141,7 @@ def check
     name.split.each do |word|
       next if word.length == 1 and word !~ /\w/
       next if word =~ /^\W/
-      next if %w(van von da de del der den dos i).include? word
+      next if %w(van von da de del der den dos i tot la).include? word
       output << ['case', name] if word !~ /[A-Z][a-z]*/
     end
 
@@ -207,7 +208,7 @@ end
 def send_email(target, message)
   pending = YAML.load(open(PENDING_YML))
 
-  require MAIL if defined?(MAIL)
+  require_relative 'secmail'
   require 'erb'
 
   mails = []
@@ -220,13 +221,13 @@ def send_email(target, message)
     vars.commit_message = message
 
     # collapse pmc and podling variable names
-    vars.pmc ||= vars.cpmc || vars.gpmc
-    vars.podling ||= vars.cpodling || vars.gpodling
+    vars.pmc ||= vars.cpmc || vars.gpmc || vars.ipmc || vars.upmc || vars.ppmc
+    vars.podling ||= vars.cpodling || vars.gpodling || vars.ipodling || vars.upodling || vars.ppodling
 
     # send email, if template exists
     template = vars.doctype + '.erb'
     template.taint unless template =~ /^\w[.\w]+$/
-    if defined?(MAIL) and File.exist?(template)
+    if File.exist?(template)
       # prepare to send mail
       ASF::Mail.configure
 
@@ -259,10 +260,14 @@ def send_email(target, message)
 
           # override subject?
           if vars.email_subject and !vars.email_subject.empty?
-            if vars.email_subject =~ /^re:\s/i
-              subject vars.email_subject
-            else
-              subject 'Re: ' + vars.email_subject
+            begin
+              if vars.email_subject =~ /^re:\s/i
+                subject vars.email_subject
+              else
+                subject 'Re: ' + vars.email_subject
+              end
+            rescue Encoding::UndefinedConversionError
+              # some error in the subject; use the subject in the .erb file
             end
           end
         end
@@ -287,7 +292,7 @@ def send_email(target, message)
       cc << vars.email_cc if vars.email_cc
 
       # calculate podling list name
-      if vars.podling 
+      if vars.podling and vars.podling =~ /^\w[-\w]+$/
         if OLDPODLINGS.include?(vars.podling) 
           vars.podlinglist = "#{vars.podling}-private@incubator.apache.org"
         else
@@ -297,7 +302,7 @@ def send_email(target, message)
 
       # add pmc and podling lists, if supplied
       cc << "private@#{vars.pmc}.apache.org" if vars.pmc
-      cc << "#{vars.podlinglist}" if vars.podling
+      cc << "#{vars.podlinglist}" if vars.podlinglist
       cc << "private@incubator.apache.org" if vars.podling and not vars.pmc
 
       # replace the list of cc's
@@ -357,6 +362,7 @@ _json do
     _html send_email $1, @message
   elsif @cmd =~ /svn (update|revert -R|cleanup)/ and committable.include? @file
     op, file = $1.split(' '), @file
+    op << ['--username', $USER, '--password', $PASSWORD] if $PASSWORD
     _html html_fragment {
       _.system [ 'svn', *op, file ]
     }
@@ -424,7 +430,7 @@ DESTINATION = {
   "operations" => "to_operations",
   "dup" => "deadletter/dup",
   "incomplete" => "deadletter/incomplete",
-  "unsigned" => "deadletter/incomplete"
+  "unsigned" => "deadletter/unsigned"
 }
 
 line = nil
@@ -433,7 +439,7 @@ _html do
   _head_ do
     _title 'File Document'
 
-    if ! %w{check update commit view}.include?(@action.to_s.downcase)
+    if ! %w{check update commit view danger}.include?(@action.to_s.downcase)
       _script 'parent.frames[0].location.reload()'
     end
 
@@ -605,6 +611,35 @@ _html do
         end
         _.system "svn diff #{ndalist}", hilite: @nid
       end
+
+      update_pending params, dest
+
+    when 'incomplete'
+      dest = "#{RECEIVED}/deadletter/incomplete/#{File.basename(@source)}"
+
+      Dir.chdir(RECEIVED) do
+        @realname ||= @iname
+        _h1 "Incomplete document received from #{@iname}"
+        _.move @source, dest
+      end
+
+      update_pending params, dest
+
+    when 'unsigned'
+      dest = "#{RECEIVED}/deadletter/unsigned/#{File.basename(@source)}"
+
+      Dir.chdir(RECEIVED) do
+        @realname ||= @uname
+        _h1 "Unsigned document received from #{@uname}"
+        _.move @source, dest
+      end
+
+      update_pending params, dest
+
+    when 'publickey'
+      @realname ||= @iname
+
+      _h1 "Public key not found for #{@pname}"
 
       update_pending params, dest
 
@@ -856,6 +891,9 @@ _html do
           icla: %w( realname email ),
           ccla: %w( cemail contact ),
           nda: %w( nname nemail nid ),
+          incomplete: %w( iname iemail ),
+          unsigned: %w( uname uemail ),
+          publickey: %w( pname pemail ),
           mem: %w( memail ),
           grant: %w( gname gemail ),
         } 
@@ -909,7 +947,7 @@ _html do
 	  if verify
 	    stderr2out = { class: {stderr: '_stdout'} }
 	    _.system ['gpg', '--verify', *verify], stderr2out
-            if _.target!.include? "gpg: Can't check signature: public key not found"
+            if _.target!.include? "gpg: Can't check signature:"
               keyid = _.target![/[RD]SA key ID (\w+)/,1]
               if keyid
 	        _.system ['gpg', '--keyserver', 'pgpkeys.mit.edu',
@@ -993,7 +1031,7 @@ _html do
         end
 
         pending.each do |vars|
-          vars = OpenStruct.new(vars.map {|k,v| [k.gsub(/\W/,'_'),v]})
+          vars = OpenStruct.new(Hash[vars.map {|k,v| [k.gsub(/\W/,'_'),v]}])
           _h2 "email #{vars.email}"
           _form do
             _input name: 'email', value: vars.email, type: 'hidden'
@@ -1019,6 +1057,10 @@ _html do
         end
       end
   
+    when 'danger'
+      _h2 'Potentially dangerous content'
+      _a @link, href: '/members/received/' + @link
+
     else
       _h2 'Unsupported action'
       _table border: 1, cellpadding: 10, cellspacing: 0 do

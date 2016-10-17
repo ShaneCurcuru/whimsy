@@ -10,12 +10,45 @@
 require 'digest'
 
 class Agenda
+  CACHE = File.join(AGENDA_WORK, 'cache')
+  FileUtils.mkdir_p CACHE
+  @@cache = Hash.new {|hash, key| hash[key] = {mtime: 0}}
+
+  # fetch parsed agenda from in memory cache if up to date, otherwise
+  # fall back to disk.
   def self.[](file)
-    IPC[file]
+    path = File.join(CACHE, file.sub(/\.txt$/, '.yml'))
+    path.untaint if file =~ /^board_agenda_\d+_\d+_\d+\.txt$/
+    data = @@cache[file]
+
+    if File.exist?(path) and File.mtime(path) != data[:mtime]
+      File.open(path) do |fh|
+        fh.flock(File::LOCK_SH)
+        data = YAML.load(fh.read)
+      end
+      @@cache[file] = data
+    end
+
+    data
   end
 
+  # update both in memory and disk caches with new parsed agenda
   def self.[]=(file, data)
-    IPC[file] = data
+    path = File.join(CACHE, file.sub(/\.txt$/, '.yml'))
+    path.untaint if file =~ /^board_agenda_\d+_\d+_\d+\.txt$/
+
+    File.open(path, File::RDWR|File::CREAT, 0644) do |fh|
+      fh.flock(File::LOCK_EX)
+      fh.write(YAML.dump(data))
+      fh.flush
+      fh.truncate(fh.pos)
+      if data[:mtime].instance_of? Time
+        File.utime data[:mtime], data[:mtime], path
+      end
+    end
+
+    @@cache[file] = data
+    data
   end
 
   def self.update_cache(file, path, contents, quick)
@@ -27,11 +60,11 @@ class Agenda
 
     # update cache if there wasn't a previous entry, the digest changed,
     # or the previous entry was the result of a 'quick' parse.
-    current = IPC[file]
+    current = Agenda[file]
     if not current or current[:digest] != update[:digest] or
       current[:mtime].to_i <= 0
     then
-      IPC[file] = update
+      Agenda[file] = update
       IPC.post type: :agenda, file: file, digest: update[:digest] unless quick
     end
   end
@@ -142,6 +175,7 @@ class Agenda
       else
         # if not successful, retry
         if retries > 0
+          work_file.close
           sleep rand(41-retries*2)*0.1 if retries <= 20
           update(file, message, retries-1, &block)
         else

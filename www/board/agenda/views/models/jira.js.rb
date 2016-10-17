@@ -8,10 +8,10 @@ class JIRA
   def self.find(name)
     if @@list
       return @@list.include? name
-    elsif defined? XMLHttpRequest
-      @@list = JSONStorage.get('jira') || []
-      fetch('jira', :json) do |list|
-        @@list = JSONStorage.put('jira', list) if list
+    else
+      @@list = []
+      JSONStorage.fetch 'jira' do |list|
+        @@list = list
       end
     end
   end

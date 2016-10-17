@@ -7,48 +7,61 @@ class Index < React
     @selected = nil
     @messages = []
     @checking = false
+    @fetched = false
   end
 
   def render
-    _table do
-      _thead do
-        _tr do
-          _th 'Timestamp'
-          _th 'From'
-          _th 'Subject'
+    if not @messages or @messages.all? {|message| message.status == :deleted}
+      _p.container_fluid 'All documents have been processed.'
+    else
+      _table.table do
+        _thead do
+          _tr do
+            _th 'Timestamp'
+            _th 'From'
+            _th 'Subject'
+          end
         end
-      end
 
-      _tbody do
-        @messages.each do |message|
+        _tbody do
+          @messages.each do |message|
 
-          # determine the 'color' to use for the row
-          color = nil
-          color = 'deleted' if message.status == :deletePending
-          color = 'hidden' if message.status == :deleted
-          color = 'selected' if message.href == @selected
+            # determine the 'color' to use for the row
+            color = nil
+            color = 'deleted' if message.status == :deletePending
+            color = 'hidden' if message.status == :deleted
+            color = 'selected' if message.href == @selected
 
-          time = Date.new(Date.parse(message.time)).toLocaleString()
+            time = Date.new(Date.parse(message.time)).toLocaleString()
 
-          _tr class: color, onClick: self.selectRow, onDoubleClick: self.nav do
-            _td do
-              _a time, href: "#{message.href}", title: message.time
-            end 
-            _td message.from
-            _td message.subject
+            row_options = {
+              className: color, 
+              onClick: self.selectRow, 
+              onDoubleClick: self.nav
+            }
+
+            _tr row_options do
+              _td do
+                _a time, href: "#{message.href}", title: message.time
+              end 
+              _td message.from
+              _td message.subject
+            end
           end
         end
       end
     end
 
-    if @nextmbox
+    if @fetched and @nextmbox
       _button.btn.btn_primary 'download previous month',
         onClick: self.fetch_month
     end
 
-    unless window.location.hostname =~ /^whimsy(-test)?\.apache\.org$/
-      _button.btn.btn_success 'check for new mail', onClick: self.refresh,
-        disabled: @checking
+    if defined? window
+      unless window.location.hostname =~ /^whimsy.*\.apache\.org$/
+        _button.btn.btn_success 'check for new mail', onClick: self.refresh,
+          disabled: @checking
+      end
     end
 
     unless Status.undoStack.empty?
@@ -59,14 +72,23 @@ class Index < React
   # initialize next mailbox (year+month)
   def componentWillMount()
     @nextmbox = @@mbox
+    self.merge @@messages if @@messages
   end
 
   # on initial load, fetch latest mailbox, subscribe to keyboard and
   # server side events, and initialize selected item.
   def componentDidMount()
+    today = Date.new()
+    twice = (today.getMonth()+1==@nextmbox[4..5].to_i and today.getDate()<=7)
     self.fetch_month() do
-      # for the first week of the month, fetch previous month too
-      self.fetch_month() if Date.new().getDate() <= 7
+      if @nextmbox and twice
+        # for the first week of the month, fetch previous month too
+        self.fetch_month() do
+          @fetched = true
+        end
+      else
+        @fetched = true
+      end
     end
 
     window.onkeydown = self.keydown

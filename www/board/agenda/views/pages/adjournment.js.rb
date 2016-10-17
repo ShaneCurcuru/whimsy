@@ -8,6 +8,8 @@ class Adjournment < React
       add: [],
       remove: [],
       establish: [],
+      feedback: [],
+      minutes: {},
       loading: true,
       fetched: false
     })
@@ -44,6 +46,50 @@ class Adjournment < React
         unless Todos.establish.empty?
           _EstablishActions action: 'remove'
         end
+
+        unless Todos.feedback.empty?
+          _FeedbackReminder
+        end
+
+        # display a list of completed actions
+        completed = Todos.minutes.todos
+        if 
+          completed and completed.keys().length > 0 and (
+          (completed.added and not completed.added.empty?) or 
+          (completed.removed and not completed.removed.empty?) or
+          (completed.established and not completed.established.empty?) or 
+          (completed.feedback_sent and not completed.feedback_sent.empty?))
+        then
+          _h3 'Completed actions'
+
+          if completed.added and not completed.added.empty?
+            _p 'Added to PMC chairs'
+            _ul completed.added do |id|
+              _li {_a id, href: "../../../roster/committer/#{id}"}
+            end
+          end
+
+          if completed.removed and not completed.removed.empty?
+            _p 'Removed from PMC chairs'
+            _ul completed.removed do |id|
+              _li {_a id, href: "../../../roster/committer/#{id}"}
+            end
+          end
+
+          if completed.established and not completed.established.empty?
+            _p 'Established PMCs'
+            _ul completed.established do |pmc|
+              _li {_a pmc, href: "../../../roster/committee/#{pmc}"}
+            end
+          end
+
+          if completed.feedback_sent and not completed.feedback_sent.empty?
+            _p 'Sent feedback'
+            _ul completed.feedback_sent do |pmc|
+              _li {_Link text: pmc, href: pmc.gsub(/\s+/, '-')} 
+            end
+          end
+        end
       end
 
       _section do
@@ -65,7 +111,7 @@ class Adjournment < React
   def componentDidUpdate()
     if Minutes.complete and Todos.loading and not Todos.fetched
       Todos.fetched = true
-      fetch "secretary-todos/#{Agenda.title}", :json do |todos|
+      retrieve "secretary-todos/#{Agenda.title}", :json do |todos|
         Todos.set todos
         Todos.loading = false
       end
@@ -143,7 +189,6 @@ class TodoActions < React
         _ " (#{person.name})"
 
         if @@action == 'add' and person.resolution
-        console.log person
           resolution = Minutes.get(person.resolution)
           if resolution
             _ ' - '
@@ -279,6 +324,22 @@ class EstablishActions < React
   end
 end
 
+########################################################################
+#                      Reminder to draft feedback                      #
+########################################################################
+
+class FeedbackReminder < React
+  def render
+    _p 'Draft feedback:'
+
+    _ul Todos.feedback do |pmc|
+      _li {_Link text: pmc, href: pmc.gsub(/\s+/, '-')}
+    end
+
+    _button.checklist.btn.btn_default 'Submit',
+      onClick:-> {window.location.href = 'feedback'}
+  end
+end
 
 ########################################################################
 #                             shared state                             #

@@ -60,24 +60,58 @@ info[:committees] = Hash[committees.map {|committee|
 
 public_json_output(info)
 
-# Check if there is an unexpected entry
+# Check if there is an unexpected entry date
 # we only do this if the file has changed to avoid excessive reports
-# Doh - this won't work unless we just scan the changes.
-#if changed? or true
-#  last_updated = info[:last_updated]
-#  info[:committees].each { |pmc, entry|
-#    entry[:roster].each { |name, value|
-#      jdate = value[:date]
-#      if jdate
-#        joined = Date.parse(jdate,'').to_time
-#        # Joining date must not be before the file was updated
-#        # N.B. this won't be true for new PMCs - TODO allow for this
-#        if joined < last_updated
-#          msg = "Unexpected joining date: PMC: #{pmc} Id: #{name} entry: #{value} (last_updated: #{last_updated})"
-#          Wunderbar.warn msg
-#          sendMail('Error detected processing committee-info.txt', msg)
-#        end
-#      end
-#    }
-#  }
-#end
+if changed? and @old_file
+  # Note: symbolize_names=false to avoid symbolising variable keys such as pmc and user names
+  # However the current JSON (info) uses symbols for fixed keys - beware!
+  previous = JSON.parse(@old_file, :symbolize_names=>false)
+  previous = previous['committees']
+  last_updated = info[:last_updated] # This is a Time instance
+  # the joining date should normally be the same as the date when the file was updated:
+  updated_day1 = last_updated.strftime("%Y-%m-%d") # day of update
+  # and the date must be after the last time the data was checked.
+  # Unfortunately the last_updated field is only updated when the content changes -
+  # there is currently no record of when the last check was done.
+  # For now, just assume that this is done every 15 mins. This may cause spurious reports
+  # if the checks are ever suspended for longer and meanwhile changes occur. 
+  # Note: for those in an earlier timezone the date could be a few hours earlier
+  updated_day2 = (last_updated-3600*4).strftime("%Y-%m-%d") # day of previous update
+
+  info[:committees].each { |pmc, entry|
+    next if pmc == 'infrastructure' # no dates
+    previouspmc = previous[pmc] # get the original details (if any)
+    if previouspmc # we have an existing entry
+      entry[:roster].each { |name, value|
+        newdate = value[:date]
+        if newdate == nil
+          Wunderbar.warn "Un-dated member for #{pmc}: #{name} #{value[:name]} #{newdate}"
+          next
+        end
+        if !previouspmc['roster'][name] # new name, check the date is OK
+          if newdate <= updated_day1 and newdate >= updated_day2 # in range
+            Wunderbar.info "New member for #{pmc}: #{name} #{value[:name]} #{newdate}"
+          elsif newdate > updated_day1
+            Wunderbar.warn "Future-dated member for #{pmc}: #{name} #{value[:name]} #{newdate}"
+          else
+            Wunderbar.warn "Past-dated member for #{pmc}: #{name} #{value[:name]} #{newdate}"
+          end
+        else
+          olddate = previouspmc['roster'][name]['date']
+          if olddate != newdate
+            Wunderbar.warn "Changed date member for #{pmc}: #{name} #{value[:name]} #{olddate} => #{newdate}"
+          end
+        end
+      }
+    else
+      Wunderbar.info "New PMC detected: #{pmc}"
+      # Could check that the joining dates are all the same?
+    end
+  }
+
+  previous.each { |pmc, entry|
+    if !info[:committees][pmc]
+      Wunderbar.info "Deleted PMC detected: #{pmc}"
+    end
+  }
+end

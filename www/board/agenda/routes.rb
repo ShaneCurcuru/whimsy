@@ -20,7 +20,7 @@ end
 # redirect root to latest agenda
 get '/' do
   agenda = dir('board_agenda_*.txt').sort.last
-  redirect to("/#{agenda[/\d+_\d+_\d+/].gsub('_', '-')}/")
+  redirect "#{request.path}#{agenda[/\d+_\d+_\d+/].gsub('_', '-')}/"
 end
 
 # redirect missing to missing page for the latest agenda
@@ -92,6 +92,7 @@ get %r{/(\d\d\d\d-\d\d-\d\d)/(.*)} do |date, path|
     firstname: username.split(' ').first.downcase,
     initials: initials,
     online: IPC.present,
+    session: Session.user(userid),
     role: role,
     directors: Hash[ASF::Service['board'].members.map {|person| 
       initials = person.public_name.gsub(/[^A-Z]/, '').downcase
@@ -113,8 +114,16 @@ get %r{/(\d\d\d\d-\d\d-\d\d)/(.*)} do |date, path|
   @page[:minutes] = YAML.load(File.read(minutes)) if File.exist? minutes
 
   @cssmtime = File.mtime('public/stylesheets/app.css').to_i
+  @appmtime = Wunderbar::Asset.convert("#{settings.views}/app.js.rb").mtime.to_i
 
-  _html :'main'
+  if path == 'bootstrap.html'
+    @page[:parsed] = [@page[:parsed].first]
+    @page[:digest] = nil
+    @page[:etag] = nil
+    _html :bootstrap
+  else
+    _html :main
+  end
 end
 
 # append slash to agenda page if not present
@@ -122,9 +131,21 @@ get %r{^/(\d\d\d\d-\d\d-\d\d)$} do |date|
   redirect to("/#{date}/")
 end
 
+# posted reports
+get '/json/posted-reports' do
+  _json :"actions/posted-reports"
+end
+
 # posted actions
 post '/json/:file' do
   _json :"actions/#{params[:file]}"
+end
+
+# Raw minutes
+get %r{(\d\d\d\d-\d\d-\d\d).ya?ml} do |file|
+  minutes = AGENDA_WORK + '/' + "board_minutes_#{file.gsub('-','_')}.yml"
+  pass unless File.exists? minutes
+  _text File.read minutes
 end
 
 # updates to agenda data
@@ -211,30 +232,6 @@ end
 # historical comments
 get '/json/historical-comments' do
   _json HistoricalComments.comments
-end
-
-# event stream for server sent events (a.k.a EventSource)
-get '/events', provides: 'text/event-stream' do
-  stream :keep_open do |out|
-    subscription = IPC.subscribe(env.user)
-    out.callback {IPC.unsubscribe(subscription)}
-
-    loop do
-      event = IPC.pop(subscription)
-      if Hash === event or Array === event
-        out << "data: #{JSON.dump(event)}\n\n"
-      elsif event == :heartbeat
-        out << ":\n"
-      elsif event == :exit
-        out.close
-        break
-      elsif event == nil
-        subscription = IPC.subscribe(env.user)
-      else
-        out << "data: #{event.inspect}\n\n"
-      end
-    end
-  end
 end
 
 # draft minutes

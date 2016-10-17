@@ -9,7 +9,7 @@ class Parts < React
     @busy = false
     @attachments = []
     @drag = nil
-    @form = nil
+    @form = :categorize
     @menu = nil
   end
 
@@ -35,7 +35,7 @@ class Parts < React
     signature = CheckSignature.find(@selected, @attachments)
 
     # list of attachments
-    _ul @attachments, ref: 'attachments' do |attachment|
+    _ul.attachments! @attachments, ref: 'attachments' do |attachment|
       if attachment == @drag
         options[:className] = 'dragging'
       elsif attachment == @selected
@@ -46,9 +46,19 @@ class Parts < React
         options[:className] = nil
       end
 
-      _li options do
-        _a attachment, href: attachment, target: 'content', draggable: 'false'
+      if attachment =~ /\.(pdf|txt|jpeg|jpg|gif|png)$/i
+        link = "./#{attachment}"
+      else
+        link = "_danger_/#{attachment}"
       end
+
+      _li options do
+        _a attachment, href: link, target: 'content', draggable: 'false'
+      end
+    end
+
+    if @headers and @headers.secmail and @headers.secmail.status
+      _div.alert.alert_info @headers.secmail.status
     end
 
     # context menu that displays when you 'right click' an attachment
@@ -60,55 +70,132 @@ class Parts < React
       _li "\u21B6 left", onMouseDown: self.rotate_attachment
       _li.divider
       _li "\u2716 delete", onMouseDown: self.delete_attachment
+      _li "\u2709 pdf-ize", onMouseDown: self.pdfize
     end
 
     if @selected and not @menu and @selected !~ /\.(asc|sig)$/
 
       _CheckSignature selected: @selected, attachments: @attachments,
-        headers: @@headers
+        headers: @headers
 
-      # filing options
-      _table.doctype do
-        _tr do
-          _td do
+      _ul.nav.nav_tabs do
+        _li class: ('active' unless [:edit, :mail].include?(@form)) do
+          _a 'Categorize', onMouseDown: self.tabSelect
+        end
+        _li class: ('active' if @form == :edit) do
+          _a 'Edit', onMouseDown: self.tabSelect
+        end
+        _li class: ('active' if @form == :mail) do
+          _a 'Mail', onMouseDown: self.tabSelect
+        end
+      end
+
+      if @form == :categorize
+
+        # filing options
+        _div.doctype do
+          _label do
             _input type: 'radio', name: 'doctype', value: 'icla',
               onClick: -> {@form = ICLA}
+            _span 'icla'
           end
 
-          _td do
-            _input type: 'radio', name: 'doctype', value: 'grant',
-              onClick: -> {@form = Grant}
-          end
-
-          _td do
+          _label do
             _input type: 'radio', name: 'doctype', value: 'ccla',
               onClick: -> {@form = CCLA}
+            _span 'ccla'
           end
 
-          _td do
-            _input type: 'radio', name: 'doctype', value: 'nda',
-              onClick: -> {@form = NDA}
+          _label do
+            _input type: 'radio', name: 'doctype', value: 'grant',
+              onClick: -> {@form = Grant}
+            _span 'software grant'
           end
 
-          _td do
+          _label do
             _input type: 'radio', name: 'doctype', value: 'mem',
               onClick: -> {@form = MemApp}
+            _span 'membership application'
+          end
+
+          _hr
+
+          # reject message with message
+          _form method: 'POST', target: 'content' do
+            _input type: 'hidden', name: 'message',
+              value: window.parent.location.pathname
+            _input type: 'hidden', name: 'selected', value: @@selected
+            _input type: 'hidden', name: 'signature', value: @@signature
+
+            _label do
+              _input type: 'radio', name: 'doctype', value: 'incomplete',
+                onClick: self.reject
+              _span 'incomplete form'
+            end
+
+            _label do
+              _input type: 'radio', name: 'doctype', value: 'unsigned',
+                onClick: self.reject
+              _span 'unsigned form'
+            end
+
+            _label do
+              _input type: 'radio', name: 'doctype', value: 'pubkey',
+                onClick: self.reject
+              _span 'upload public key'
+            end
+          end
+
+          _hr
+
+          _label do
+            _input type: 'radio', name: 'doctype', value: 'forward',
+              onClick: -> {@form = Forward}
+            _span 'forward email'
           end
         end
 
-        _tr do
-          _td 'icla'
-          _td 'grant'
-          _td 'ccla'
-          _td 'nda'
-          _td 'mem'
-        end
-      end
+      elsif @form == :edit
 
-      if @form
-        React.createElement @form, headers: @@headers, submit: self.submit
+        _ul.editPart! do
+          _li "\u2704 burst", onMouseDown: self.burst
+          _li.divider
+          _li "\u21B7 right", onMouseDown: self.rotate_attachment
+          _li "\u21c5 flip", onMouseDown: self.rotate_attachment
+              _li "\u21B6 left", onMouseDown: self.rotate_attachment
+          _li.divider
+          _li "\u2716 delete", onMouseDown: self.delete_attachment
+          _li "\u2709 pdf-ize", onMouseDown: self.pdfize
+        end
+
+      elsif @form == :mail
+
+        _div.partmail! do
+          _h3 'cc'
+          _textarea value: @cc, name: 'cc'
+
+          _h3 'bcc'
+          _textarea value: @bcc, name: 'bcc'
+
+          _button.btn.btn_primary 'Save', onClick: self.update_mail
+        end
+
+      else
+
+        React.createElement @form, headers: @headers, selected: @selected,
+          signature: signature
+
       end
     end
+  end
+
+  ########################################################################
+  #                            Tab selection                             #
+  ########################################################################
+
+  def tabSelect(event)
+    @form = event.currentTarget.textContent.downcase()
+    jQuery('.doctype input').prop('checked', false)
   end
 
   ########################################################################
@@ -133,6 +220,20 @@ class Parts < React
     end
 
     self.hideMenu()
+
+    self.extractHeaders(@@headers)
+
+    window.addEventListener 'message', self.status_update
+  end
+
+  def componentWillReceiveProps()
+    self.extractHeaders(@@headers)
+  end
+
+  def extractHeaders(headers)
+    @cc = (headers.cc || []).join("\n")
+    @bcc = (headers.bcc || []).join("\n")
+    @headers = headers
   end
 
   def componentDidUpdate()
@@ -188,7 +289,7 @@ class Parts < React
   # burst a PDF into individual pages
   def burst(event)
     data = {
-      selected: @menu,
+      selected: @menu || @selected,
       message: window.parent.location.pathname
     }
 
@@ -207,14 +308,19 @@ class Parts < React
   # burst a PDF into individual pages
   def delete_attachment(event)
     data = {
-      selected: @menu,
+      selected: @menu || @selected,
       message: window.parent.location.pathname
     }
 
     @busy = true
     HTTP.post('../../actions/delete-attachment', data).then {|response|
-      if response.attachments and not response.attachments.empty?
-        @attachments = response.attachments
+      @attachments = response.attachments
+      if event.type == 'message'
+        signature = CheckSignature.find(@selected, response.attachments)
+        @busy = false
+        @selected = signature
+        self.delete_attachment(event) if signature
+      elsif response.attachments and not response.attachments.empty?
         self.hideMenu()
         window.parent.frames.content.location.href='_body_'
       else
@@ -231,7 +337,7 @@ class Parts < React
     message = window.parent.location.pathname
 
     data = {
-      selected: @menu,
+      selected: @menu || @selected,
       message: message,
       direction: event.currentTarget.textContent
     }
@@ -250,34 +356,63 @@ class Parts < React
     }
   end
 
+  # convert an attachment to pdf
+  def pdfize(event)
+    message = window.parent.location.pathname
+
+    data = {
+      selected: @menu || @selected,
+      message: message
+    }
+
+    @busy = true
+    HTTP.post('../../actions/pdfize', data).then {|response|
+      @attachments = response.attachments
+      self.selectPart response.selected
+      self.hideMenu()
+
+      # reload attachment in content pane
+      window.parent.frames.content.location.href = response.selected
+    }.catch {|error|
+      alert error
+      self.hideMenu()
+    }
+  end
+
+  ########################################################################
+  #                             Update email                             #
+  ########################################################################
+
+  def update_mail(event)
+    event.target.disabled = true
+
+    jQuery.ajax(
+      type: "POST",
+      url: "../../actions/update-mail",
+      data: {
+        message: window.parent.location.pathname,
+        cc: @cc,
+        bcc: @bcc
+      },
+      dataType: 'json',
+      success: ->(data) { self.extractHeaders(data.headers) },
+      complete: -> { event.target.disabled = false }
+    )
+  end
+
+  ########################################################################
+  #                         Reject attachment                            #
+  ########################################################################
+
+  def reject(event)
+    form = jQuery(event.target).closest('form')
+    form.attr('action', "../../tasklist/#{event.target.value}")
+    form.submit()
+  end
+
   ########################################################################
   #                            Miscellaneous                             #
   ########################################################################
-
-  # form submission - handles all forms
-  def submit(event)
-    event.preventDefault()
-    form = event.currentTarget
-
-    # collect up name of selected attachment and all input fields
-    data = {message: window.parent.location.pathname, selected: @selected}
-    Array(form.querySelectorAll('input')).each do |field|
-      data[field.name] = field.value if field.name
-    end
-
-    # add signature (if present)
-    data.signature = CheckSignature.find(@selected, @attachments)
-
-    # submit HTTP post request
-    @busy = true
-    return HTTP.post(form.action, data).then {|response|
-      @busy = false
-      return response
-    }.catch {|error|
-      alert error
-      @busy = false
-    }
-  end
 
   # clicking on an attachment selects it
   def select(event)
@@ -286,9 +421,10 @@ class Parts < React
 
   # if selection changes, reset form and radio buttons
   def selectPart(part)
+    part = part.split('/').pop()
     if @selected != part
       @selected = part
-      @form = nil
+      @form = :categorize
 
       Array(document.querySelectorAll('input[type=radio]')).each do |button|
         button.checked = false
@@ -311,9 +447,24 @@ class Parts < React
           alert error
           @busy = false
         }
+      elsif !%w(input textarea).include? event.target.tagName.downcase()
+        window.parent.location.href = '../..'
       end
     elsif event.keyCode == 38 # up
       window.parent.location.href = '../..'
+    elsif event.keyCode == 13 # enter/return
+      event.stopPropagation()
+    end
+  end
+
+  # tasklist completion events
+  def status_update(event)
+    if event.data.status == 'complete'
+      self.delete_attachment(event)
+    elsif event.data.status == 'keep'
+      @selected = nil
+      @form = :categorize
+      self.extractHeaders event.data.headers if event.data.headers
     end
   end
 
@@ -364,8 +515,8 @@ class Parts < React
     event.preventDefault()
 
     data = {
-      source: @drag,
-      target: href,
+      source: @drag.split('/').pop(),
+      target: href.split('/').pop(),
       message: window.parent.location.pathname
     }
 

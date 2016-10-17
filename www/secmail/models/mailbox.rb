@@ -1,4 +1,4 @@
-#
+
 # Encapsulate access to mailboxes
 #
 
@@ -100,7 +100,7 @@ class Mailbox
   #
   def self.find(message)
     month, hash = message.match(%r{/(\d+)/(\w+)}).captures
-    Mailbox.new(month).find(hash)
+    Mailbox.new(month.untaint).find(hash.untaint)
   end
 
   #
@@ -156,7 +156,7 @@ class Mailbox
   def client_headers
     # fetch a list of headers for all messages in the maibox with attachments
     headers = self.headers.to_a.select do |id, message|
-      message[:attachments]
+      not Message.attachments(message).empty?
     end
 
     # extract relevant fields from the headers
@@ -164,7 +164,7 @@ class Mailbox
       {
         time: message[:time],
         href: "#{message[:source]}/#{id}/",
-        from: message[:from],
+        from: message[:name] || message[:from],
         subject: message['Subject'],
         status: message[:status]
       }

@@ -3,7 +3,14 @@
 #
 
 _html do
-  _link rel: 'stylesheet', type: 'text/css', href: '../../secmail.css'
+  _link rel: 'stylesheet', type: 'text/css', 
+    href: "../../secmail.css?#{@cssmtime}"
+
+  _header_ do
+    _h3.bg_success do
+      _a 'ASF Secretary Mail', href: '../..', target: '_parent'
+    end
+  end
 
   _ul_ do
     _li! {_a 'text', href: '_body_', target: 'content'}
@@ -11,12 +18,10 @@ _html do
     _li! {_a 'raw', href: '_raw_', target: 'content'}
   end
 
-  _div.attachments!
+  _div_.parts!
 
-  _script src: '../../app.js'
-  _.render '#attachments' do
-    _Parts attachments: @attachments, headers: @headers
-  end
+  _hr_
+
   _h4_ 'Links'
   _ul do
     _li do
@@ -76,7 +81,7 @@ _html do
         href: 'https://svn.apache.org/repos/private/foundation/members.txt'
     end
     _li do
-      _a 'How to use this tool', href: 'HOWTO.html',
+      _a 'How to use this tool', href: '../../HOWTO.html',
         target: 'content'
     end
     if File.exist? '/var/tools/secretary/secmail'
@@ -84,4 +89,10 @@ _html do
       _li {_a 'Upload email', href: 'upload', target: 'content'}
     end
   end
+
+  _script src: '../../app.js'
+  _.render '#parts' do
+    _Parts attachments: @attachments, headers: @headers
+  end
+
 end

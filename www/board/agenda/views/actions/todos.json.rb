@@ -7,6 +7,7 @@ TLPREQ = '/srv/secretary/tlpreq'
 date = params[:date].gsub('-', '_')
 date.untaint if date =~ /^\d+_\d+_\d+$/
 agenda = "board_agenda_#{date}.txt"
+`svn up #{TLPREQ}`
 victims = Dir["#{TLPREQ}/victims-#{date}.*.txt"].
   map {|name| File.read(name.untaint).lines().map(&:chomp)}.flatten
 
@@ -23,6 +24,22 @@ end
 
 minutes[:todos] ||= {}
 todos = minutes[:todos].dup
+
+# iterate over the agenda, finding items where there is either comments or
+# minutes that can be forwarded to the PMC
+feedback = []
+Agenda.parse(agenda, :full).each do |item|
+  # select exec officer, additional officer, and committee reports
+  next unless item[:attach] =~ /^(4[A-Z]|\d|[A-Z]+)$/
+  next unless item['chair_email']
+
+  next unless minutes[item['title']] or 
+    (item['comments'] and not item['comments'].empty?)
+
+  unless todos[:feedback_sent] and todos[:feedback_sent].include? item['title']
+    feedback << item['title'] 
+  end
+end
 
 ########################################################################
 #                               Actions                                #
@@ -80,8 +97,14 @@ if @establish and env.password
 
     ASF::LDAP.bind(env.user, env.password) do
       chairs.add [chair] unless chairs.members.include? chair
-      ASF::Group.add(pmc.downcase, members)
-      ASF::Committee.add(pmc.downcase, members)
+
+      if ASF::Group.find(pmc.downcase).members.empty?
+        ASF::Group.add(pmc.downcase, members)
+      end
+
+      if ASF::Committee.find(pmc.downcase).members.empty?
+        ASF::Committee.add(pmc.downcase, members)
+      end
     end 
   end
 
@@ -147,3 +170,4 @@ _establish establish.
 _terminate terminate.
   map {|name, resolution| {name: name, resolution: resolution}}
 _minutes minutes
+_feedback feedback

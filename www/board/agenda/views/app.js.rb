@@ -10,6 +10,7 @@ require_relative 'layout/footer'
 
 # Individual pages
 require_relative 'pages/adjournment'
+require_relative 'pages/bootstrap'
 require_relative 'pages/index'
 require_relative 'pages/report'
 require_relative 'pages/action-items'
@@ -23,6 +24,7 @@ require_relative 'pages/missing'
 require_relative 'pages/backchannel'
 require_relative 'pages/roll-call'
 require_relative 'pages/select-actions'
+require_relative 'pages/cache'
 
 # Button + forms
 require_relative 'buttons/add-comment'
@@ -42,7 +44,6 @@ require_relative 'buttons/showseen'
 require_relative 'buttons/timestamp'
 require_relative 'buttons/vote'
 require_relative 'buttons/email'
-require_relative 'buttons/feedback'
 
 # Common elements
 require_relative 'elements/additional-info'
@@ -53,6 +54,7 @@ require_relative 'elements/info'
 
 # Model
 require_relative 'models/events'
+require_relative 'models/pagecache'
 require_relative 'models/agenda'
 require_relative 'models/minutes'
 require_relative 'models/chat'

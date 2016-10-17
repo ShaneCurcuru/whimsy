@@ -7,18 +7,32 @@ require 'wunderbar/bootstrap'
 require 'wunderbar/react'
 require 'ruby2js/filter/functions'
 require 'ruby2js/filter/require'
+require 'erb'
 require 'sanitize'
+require 'escape'
 
+require_relative 'personalize'
 require_relative 'helpers'
 require_relative 'models/mailbox'
 require_relative 'models/safetemp'
 require_relative 'models/events'
+require_relative 'tasks'
+
+require 'whimsy/asf'
+ASF::Mail.configure
 
 # list of messages
 get '/' do
+  redirect to('/') if env['REQUEST_URI'] == env['SCRIPT_NAME']
+
   # determine latest month for which there are messages
   archives = Dir["#{ARCHIVE}/*.yml"].select {|name| name =~ %r{/\d{6}\.yml$}}
   @mbox = archives.empty? ? nil : File.basename(archives.sort.last, '.yml')
+  @messages = Mailbox.new(@mbox).client_headers.select do |message|
+    message[:status] != :deleted
+  end
+
+  @cssmtime = File.mtime('public/secmail.css').to_i
   _html :index
 end
 
@@ -38,6 +52,19 @@ get %r{^/(\d{6})/(\w+)/$} do |month, hash|
   @message = Mailbox.new(month).headers[hash]
   pass unless @message
   _html :message
+end
+
+# task lists
+post '/tasklist/:file' do
+  @jsmtime = File.mtime('public/tasklist.js').to_i
+  @cssmtime = File.mtime('public/secmail.css').to_i
+
+  if request.content_type == 'application/json'
+    _json(:"actions/#{params[:file]}")
+  else
+    @dryrun = JSON.parse(_json(:"actions/#{params[:file]}"))
+    _html :tasklist
+  end
 end
 
 # posted actions
@@ -91,12 +118,14 @@ get %r{^/(\d{6})/(\w+)/_index_$} do |month, hash|
   @attachments = message.attachments
   @headers = message.headers.dup
   @headers.delete :attachments
+  @cssmtime = File.mtime('public/secmail.css').to_i
   _html :parts
 end
 
 # message body for a single message
 get %r{^/(\d{6})/(\w+)/_body_$} do |month, hash|
   @message = Mailbox.new(month).find(hash)
+  @cssmtime = File.mtime('public/secmail.css').to_i
   pass unless @message
   _html :body
 end
@@ -113,6 +142,17 @@ get %r{^/(\d{6})/(\w+)/_raw_$} do |month, hash|
   message = Mailbox.new(month).find(hash)
   pass unless message
   [200, {'Content-Type' => 'text/plain'}, message.raw]
+end
+
+# intercede for potentially dangerous message attachments
+get %r{^/(\d{6})/(\w+)/_danger_/(.*?)$} do |month, hash, name|
+  message = Mailbox.new(month).find(hash)
+  pass unless message
+
+  @part = message.find(name)
+  pass unless @part
+
+  _html :danger
 end
 
 # a specific attachment for a message

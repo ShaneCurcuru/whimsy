@@ -3,6 +3,9 @@
 #
 
 _html do
+  _link rel: 'stylesheet', type: 'text/css', 
+    href: "../../secmail.css?#{@cssmtime}"
+
   #
   # Selected headers
   #
@@ -17,10 +20,10 @@ _html do
       _td @message.to
     end
 
-    if @message.cc
+    if @message.cc and not @message.cc.empty?
       _tr do
         _td 'Cc:'
-        _td @message.cc
+        _td @message.cc.join(', ')
       end
     end
 
@@ -54,6 +57,6 @@ _html do
       body.force_encoding(@message.text_part.charset)
     end
 
-    _pre body.encode('utf-8', invalid: :replace, undef: :replace)
+    _pre.bg_info body.encode('utf-8', invalid: :replace, undef: :replace)
   end
 end

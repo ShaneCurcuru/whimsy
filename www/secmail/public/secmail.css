@@ -1,3 +1,7 @@
+header h1, header h3 {
+  margin-top: 0;
+}
+
 #index table {
   margin-left: 8px;
 }
@@ -33,12 +37,17 @@
   opacity: 0.5;
 }
 
-table.doctype {
-  width: 100%;
+.doctype label {
+  display: block
 }
 
-table.doctype td {
-  text-align: center;
+.doctype input[type=radio] {
+  width: 3em
+}
+
+#parts h4 {
+  padding: 10px 1em;
+  background-color: #d9e9f7;
 }
 
 table.form {
@@ -47,11 +56,11 @@ table.form {
   margin-top: 2em;
 }
 
-.form input {
+.form input, .form textarea {
   width: 100%;
 }
 
-.form input:invalid {
+.form input:invalid, .form textarea:invalid {
   border: 1px solid red;
 }
 
@@ -67,11 +76,11 @@ form .btn {
   margin-top: 0.5em;
 }
 
-#attachments li {
+#attachments li.attachment {
   width: 100%
 }
 
-#attachments div.buttons {
+div.buttons {
   text-align: center;
   margin: 1em 0;
 }
@@ -91,13 +100,23 @@ ul.contextMenu {
   padding: 8px 0;
 }
 
-.contextMenu li {
-  list-style: none;
-  padding: 0px 8px;
-  margin: 0px;
+ul#editPart {
+  padding: 0 1.5em;
 }
 
-.contextMenu li:hover {
+.contextMenu li {
+  list-style: none;
+  padding: 0 8px;
+  margin: 0;
+}
+
+#editPart li {
+  list-style: none;
+  padding: 8;
+  margin: 16px 0;
+}
+
+.contextMenu li:hover, #editPart li:hover {
   background-color: #1E90FF;
   color: white;
   cursor: pointer;
@@ -133,4 +152,31 @@ ul.contextMenu {
   z-index: -1;
   right: 0;
   top: 0;
+}
+
+#partmail h3 {
+  margin-top: 10px;
+}
+
+#partmail button {
+  display: block;
+  margin-top: 15px;
+}
+
+#partmail textarea {
+  height: 7em;
+  width: 100%;
+}
+
+pre.bg-info {
+  white-space: pre-wrap;
+  word-break: normal;
+}
+
+#tasklist input, #tasklist textarea {
+  width: 100%;
+}
+
+#parts table {
+  margin-top: 14px; 
 }

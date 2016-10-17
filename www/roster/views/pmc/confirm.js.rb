@@ -7,6 +7,7 @@ class PMCConfirm < React
     @text = 'text'
     @color = 'btn-default'
     @button = 'OK'
+    @disabled = false
   end
 
   def render
@@ -23,8 +24,11 @@ class PMCConfirm < React
           end
 
           _div.modal_footer do
-            _button.btn.btn_default 'Cancel', data_dismiss: 'modal'
-            _button.btn @button, class: @color, onClick: self.post
+            _span.status 'Processing request...' if @disabled
+            _button.btn.btn_default 'Cancel', data_dismiss: 'modal',
+              disabled: @disabled
+            _button.btn @button, class: @color, onClick: self.post,
+              disabled: @disabled
           end
         end
       end
@@ -55,19 +59,24 @@ class PMCConfirm < React
       body: {pmc: @@pmc, id: @id, action: action, targets: targets}.inspect
     }
 
-    fetch('actions/committee', args).then {|response|
-      content_type = response.headers.get('content-type') || ''
-      if response.status == 200 and content_type.include? 'json'
-        response.json().then do |json|
-          @@update.call(json)
+    @disabled = true
+    Polyfill.require(%w(Promise fetch)) do
+      fetch('actions/committee', args).then {|response|
+        content_type = response.headers.get('content-type') || ''
+        if response.status == 200 and content_type.include? 'json'
+          response.json().then do |json|
+            @@update.call(json)
+          end
+        else
+          alert "#{response.status} #{response.statusText}"
         end
-      else
-        alert "#{response.status} #{response.statusText}"
-      end
-      jQuery('#confirm').modal(:hide)
-    }.catch {|error|
-      alert errror
-      jQuery('#confirm').modal(:hide)
-    }
+        jQuery('#confirm').modal(:hide)
+        @disabled = false
+      }.catch {|error|
+        alert errror
+        jQuery('#confirm').modal(:hide)
+        @disabled = false
+      }
+    end
   end
 end

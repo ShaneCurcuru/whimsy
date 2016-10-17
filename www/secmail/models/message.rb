@@ -11,6 +11,8 @@ require_relative 'attachment.rb'
 class Message
   attr_reader :headers
 
+  SIG_MIMES = %w(application/pkcs7-signature application/pgp-signature)
+
   #
   # create a new message
   #
@@ -26,6 +28,7 @@ class Message
   #
   def find(name)
     name = name[1...-1] if name =~ /<.*>/
+    name = name[2..-1] if name.start_with? './'
 
     headers = @headers[:attachments].find do |attach|
       attach[:name] == name or attach['Content-ID'].to_s == '<' + name + '>'
@@ -52,6 +55,10 @@ class Message
     @email
   end
 
+  def id
+    @headers['Message-ID']
+  end
+
   def from
     mail[:from]
   end
@@ -61,7 +68,21 @@ class Message
   end
 
   def cc
-    mail[:cc]
+    @headers[:cc]
+  end
+
+  def cc=(value)
+    value=value.split("\n") if String === value
+    @headers[:cc]=value
+  end
+
+  def bcc
+    @headers[:bcc]
+  end
+
+  def bcc=(value)
+    value=value.split("\n") if String === value
+    @headers[:bcc]=value
   end
 
   def subject
@@ -76,8 +97,17 @@ class Message
     mail.text_part
   end
 
+  def self.attachments(headers)
+    attachments = headers[:attachments]
+    return [] unless attachments
+    attachments.
+      reject {|attachment| SIG_MIMES.include? attachment[:mime]}.
+      map {|attachment| attachment[:name]}.
+      select {|name| name != 'signature.asc'}
+  end
+
   def attachments
-    @headers[:attachments].map {|attachment| attachment[:name]}
+    Message.attachments(@headers)
   end
 
   #
@@ -132,9 +162,13 @@ class Message
   # write one or more attachments to directory containing an svn checkout
   #
   def write_svn(repos, filename, *attachments)
-    attachments = attachments.flatten.compact
+    # drop all nil and empty values
+    attachments = attachments.flatten.reject {|name| name.to_s.empty?}
 
-    if attachments.length == 1
+    # if last argument is a Hash, treat it as name/value pairs
+    attachments += attachments.pop.to_a if Hash === attachments.last
+
+    if attachments.flatten.length == 1
       ext = File.extname(attachments.first).untaint
       find(attachments.first).write_svn(repos, filename + ext)
     else
@@ -151,13 +185,116 @@ class Message
       Dir.mkdir dest
 
       # write out selected attachment
-      attachments.each do |attachment|
-        find(attachment).write_svn(repos, filename)
+      attachments.each do |attachment, basename|
+        find(attachment).write_svn(repos, filename, basename)
       end
 
       Kernel.system 'svn', 'add', dest
       dest
     end
+  end
+
+  #
+  # Construct a reply message, and in the process merge the email
+  # address from the original message (from, to, cc) with any additional
+  # address provided on the call (to, cc, bcc).  Remove any duplicates
+  # that may occur not only due to the merge, but also comparing across
+  # field types (for example, don't cc an address listed on the to field).
+  #
+  # Finally, canonicalize (format) the email addresses and ensure that
+  # the results aren't marked ask tainted, as the Ruby SMTP library will
+  # refuse to send to tainted addresses, and in the secretary mail application
+  # the addresses are expected to come from the mail archive and the
+  # secretary, both of which can be trusted.
+  #
+  def reply(fields)
+    mail = Mail.new
+
+    # fill in the from address
+    mail.from = fields[:from]
+
+    # fill in the reply to headers
+    mail.in_reply_to = self.id
+    mail.references = self.id
+
+    # fill in the subject from the original email
+    if self.subject =~ /^re:\s/i
+      mail.subject = self.subject
+    else
+      mail.subject = 'Re: ' + self.subject
+    end
+
+    # fill in the subject from the original email
+    mail.body = fields[:body]
+
+    # gather up the to, cc, and bcc addresses
+    to = []
+    cc = []
+    bcc = []
+
+    # process 'to' addresses on method call
+    if fields[:to]
+      Array(fields[:to]).compact.each do |addr|
+        addr = Message.liberal_email_parser(addr) if addr.is_a? String
+        next if to.any? {|a| a.address = addr.address}
+        to << addr
+      end
+    end
+
+    # process 'from' addresses from original email
+    self.from.addrs.each do |addr|
+      next if to.any? {|a| a.address == addr.address}
+      if fields[:to]
+        next if cc.any? {|a| a.address == addr.address}
+        cc << addr
+      else
+        to << addr
+      end
+    end
+
+    # process 'to' addresses from original email
+    self.to.addrs.each do |addr|
+      next if to.any? {|a| a.address == addr.address}
+      next if cc.any? {|a| a.address == addr.address}
+      cc << addr
+    end
+
+    # process 'cc' addresses from original email
+    self.cc.each do |addr|
+      addr = Message.liberal_email_parser(addr) if addr.is_a? String
+      next if to.any? {|a| a.address == addr.address}
+      next if cc.any? {|a| a.address == addr.address}
+      cc << addr
+    end
+
+    # process 'cc' addresses on method call
+    if fields[:cc]
+      Array(fields[:cc]).compact.each do |addr|
+        addr = Message.liberal_email_parser(addr) if addr.is_a? String
+        next if to.any? {|a| a.address == addr.address}
+        next if cc.any? {|a| a.address == addr.address}
+        cc << addr
+      end
+    end
+
+    # process 'bcc' addresses on method call
+    if fields[:bcc]
+      Array(fields[:bcc]).compact.each do |addr|
+        addr = Message.liberal_email_parser(addr) if addr.is_a? String
+        next if to.any? {|a| a.address == addr.address}
+        next if cc.any? {|a| a.address == addr.address}
+        next if bcc.any? {|a| a.address == addr.address}
+        bcc << addr
+      end
+    end
+
+    # reformat and untaint email addresses
+    mail[:to] = to.map {|addr| addr.format.dup.untaint}
+    mail[:cc] = cc.map {|addr| addr.format.dup.untaint} unless cc.empty?
+    mail[:bcc] = bcc.map {|addr| addr.format.dup.untaint} unless bcc.empty?
+
+    # return the resulting email
+    mail
   end
 
   #
@@ -175,9 +312,9 @@ class Message
 
     # parse from address
     begin
-      from = Mail::Address.new(mail[:from].value).display_name
+      from = liberal_email_parser(mail[:from].value).display_name
     rescue Exception
-      from = mail[:from].value
+      from = mail[:from].value.sub(/\s+<.*?>$/)
     end
 
     # determine who should be copied on any responses
@@ -194,7 +331,7 @@ class Message
     # remove secretary and anybody on the to field from the cc list
     cc.reject! do |email|
       begin
-        address = Mail::Address.new(email).address
+        address = liberal_email_parser(email).address
         next true if address == 'secretary@apache.org'
         next true if mail.from_addrs.include? address
       rescue Exception
@@ -245,5 +382,24 @@ class Message
     end
 
     headers
+  end
+
+  # see https://github.com/mikel/mail/issues/39
+  def self.liberal_email_parser(addr)
+    addr = Mail::Address.new(addr)
+  rescue Mail::Field::ParseError
+    if addr =~ /^"([^"]*)" <(.*)>$/
+      addr = Mail::Address.new
+      addr.address = $2
+      addr.display_name = $1
+    elsif addr =~ /^([^"]*) <(.*)>$/
+      addr = Mail::Address.new
+      addr.address = $2
+      addr.display_name = $1
+    else
+      raise
+    end
+
+    return addr
   end
 end

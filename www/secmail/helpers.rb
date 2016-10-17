@@ -1,14 +1,4 @@
 helpers do
-  # update and restore an svn checkout to a clean state
-  def svn_reset(repos)
-    path = File.realpath(repos).untaint
-    out, err, rc = Open3.capture3 'svn', 'cleanup', path
-    out, err, rc = Open3.capture3 'svn', 'revert', '--recursive', path
-    out, err, rc = Open3.capture3 'svn', 'status', path
-    FileUtils.rm_rf out.scan(/^\?\s+(.*)/).flatten.map(&:untaint)
-    out, err, rc = Open3.capture3 'svn', 'update', path
-  end
-
   # replace inline images (cid:) with references to attachments
   def fixup_images(node)
     if Wunderbar::Node === node
@@ -22,5 +12,44 @@ helpers do
     elsif Array === node
       node.each {|child| fixup_images(child)}
     end
+  end
+end
+
+
+class Wunderbar::JsonBuilder
+  #
+  # extract/verify project (set @pmc and @podling)
+  #
+
+  def _extract_project
+    if @project and not @project.empty?
+      @pmc = ASF::Committee[@project]
+
+      if not @pmc
+        @podling = ASF::Podling.find(@project)
+
+        if @podling and not %w(graduated retired).include? @podling.status
+          @pmc = ASF::Committee['incubator']
+
+          unless @podling.private_mail_list
+            _info "#{@project} mailing lists have not yet been set up"
+            @podling = nil 
+          end
+        end
+      end
+
+      if not @pmc
+        _warn "#{@project} is not an active PMC or podling"
+      end
+    end
+  end
+
+  # update the status of a message
+  def _status(status_text)
+    message = Mailbox.find(@message)
+    message.headers[:secmail] ||= {}
+    message.headers[:secmail][:status] = status_text
+    message.write_headers
+    _headers message.headers
   end
 end

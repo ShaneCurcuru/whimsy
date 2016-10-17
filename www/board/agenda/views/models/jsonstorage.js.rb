@@ -1,5 +1,8 @@
 #
-# Simplify access to sessionStorage for JSON objects
+# Originally defined to simplify access to sessionStorage for JSON objects.
+#
+# Now expanded to include caching using fetch and the cache defined in
+# the Service Workers specification (but without the user of SWs).
 #
 
 class JSONStorage
@@ -33,6 +36,60 @@ class JSONStorage
     if defined? sessionStorage
       name = JSONStorage.prefix + '-' + name
       return JSON.parse(sessionStorage.getItem(name) || 'null')
+    end
+  end
+
+  # retrieve an cached object.  Note: block may be dispatched twice,
+  # once with slightly stale data and once with current data
+  #
+  # Note: caches only work currently on Firefox and Chrome.  All
+  # other browsers fall back to XMLHttpRequest (AJAX).
+  def self.fetch(name, &block)
+
+    if 
+      defined? fetch and defined? caches and
+      (location.protocol == 'https:' or location.hostname == 'localhost')
+    then
+      caches.open('board/agenda').then do |cache|
+        fetched = nil
+        clock_counter += 1
+
+        # construct request
+        request = Request.new("../json/#{name}", method: 'get',
+          credentials: 'include', headers: {'Accept' => 'application/json'})
+
+        # dispatch request
+        fetch(request).then do |response|
+          cache.put(request, response.clone())
+
+          response.json().then do |json| 
+            unless fetched and fetched.inspect == json.inspect
+              clock_counter -= 1 unless fetched
+              fetched = json
+              block(json) if json
+              Main.refresh()
+            end
+          end
+        end
+
+        # check cache
+        cache.match("../json/#{name}").then do |response|
+          if response and not fetched
+            response.json().then do |json| 
+              clock_counter -= 1
+              fetched = json
+              block(json) if json
+              Main.refresh()
+            end
+          end
+        end
+      end
+
+    elsif defined? XMLHttpRequest
+
+      # retrieve from the network only
+      retrieve name, :json, &block
+
     end
   end
 end

@@ -283,6 +283,16 @@ module ASF
 
   # search with a scope of one, with automatic retry/failover
   def self.search_one(base, filter, attrs=nil)
+    self.search_scope(::LDAP::LDAP_SCOPE_ONELEVEL, base, filter, attrs)
+  end
+
+  # search with a scope of subtree, with automatic retry/failover
+  def self.search_subtree(base, filter, attrs=nil)
+    self.search_scope(::LDAP::LDAP_SCOPE_SUBTREE, base, filter, attrs)
+  end
+
+  # search with a specified scope, with automatic retry/failover
+  def self.search_scope(scope, base, filter, attrs=nil)
 
     cmd = "ldapsearch -x -LLL -b #{base} -s one #{filter} " +
       "#{[attrs].flatten.join(' ')}"
@@ -297,7 +307,7 @@ module ASF
       target = @ldap.get_option(::LDAP::LDAP_OPT_HOST_NAME) rescue '?'
       Wunderbar.info "[#{target}] #{cmd}"
 
-      result = @ldap.search2(base, ::LDAP::LDAP_SCOPE_ONELEVEL, filter, attrs)
+      result = @ldap.search2(base, scope, filter, attrs)
     rescue Exception => re
       if attempts_left <= 0
         Wunderbar.error "[#{target}] => #{re.inspect} for #{cmd}"
@@ -475,6 +485,12 @@ module ASF
       list.values
     end
 
+    # return person only if it actually exits
+    def self.[] name
+      person = super
+      person.attrs['dn'] ? nil : person
+    end
+
     def attrs
       @attrs ||= LazyHash.new {ASF.search_one(base, "uid=#{name}").first}
     end
@@ -611,6 +627,12 @@ module ASF
 
     attr_accessor :modifyTimestamp, :createTimestamp
 
+    # return group only if it actually exits
+    def self.[] name
+      group = super
+      group.members.empty? ? nil : group
+    end
+
     def members=(members)
       @members = WeakRef.new(members)
     end
@@ -690,6 +712,12 @@ module ASF
 
     attr_accessor :modifyTimestamp, :createTimestamp
 
+    # return committee only if it actually exits
+    def self.[] name
+      committee = super
+      committee.members.empty? ? nil : committee
+    end
+
     def members=(members)
       @members = WeakRef.new(members)
     end
@@ -749,13 +777,24 @@ module ASF
     end
 
     def dn
-      "cn=#{id},#{self.class.base}"
+      return @dn if @dn
+      dns = ASF.search_subtree(self.class.base, "cn=#{name}", 'dn')
+      @dn = dns.first.first unless dns.empty?
+      @dn
+    end
+
+    def base
+      if dn
+        dn.sub(/^cn=.*?,/, '')
+      else
+        super
+      end
     end
 
     def self.preload
       Hash[ASF.search_one(base, "cn=*", %w(dn member modifyTimestamp createTimestamp)).map do |results|
         cn = results['dn'].first[/^cn=(.*?),/, 1]
-        service = ASF::Service.find(cn)
+        service = self.find(cn)
         service.modifyTimestamp = results['modifyTimestamp'].first # it is returned as an array of 1 entry
         service.createTimestamp = results['createTimestamp'].first # it is returned as an array of 1 entry
         members = results['member'] || []
@@ -780,7 +819,7 @@ module ASF
 
     def remove(people)
       @members = nil
-      people = Array(people & members).map(&:dn)
+      people = (Array(people) & members).map(&:dn)
       ASF::LDAP.modify(self.dn, [ASF::Base.mod_delete('member', people)])
     ensure
       @members = nil
@@ -793,6 +832,14 @@ module ASF
     ensure
       @members = nil
     end
+  end
+
+  class AppGroup < Service
+    @base = 'ou=apps,ou=groups,dc=apache,dc=org'
+  end
+
+  class AuthGroup < Service
+    @base = 'ou=auth,ou=groups,dc=apache,dc=org'
   end
 
 end

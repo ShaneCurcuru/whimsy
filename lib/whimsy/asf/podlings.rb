@@ -20,6 +20,9 @@ module ASF
     def initialize(node)
       @name = node['name']
       @resource = node['resource']
+      # Needed for matching against mailing list names 
+      @resourceAliases = []
+      @resourceAliases = node['resourceAliases'].split(/,\s*/) if node['resourceAliases']
       @status = node['status']
       @enddate = node['enddate']
       @startdate = node['startdate']
@@ -28,6 +31,13 @@ module ASF
       @champion = node.at('champion')['availid'] if node.at('champion')
 
       @reporting = node.at('reporting')
+
+      # Note: the following optional elements are not currently processed:
+      # - resolution
+      # - retiring/graduating
+      # The following podling attributes are not processed:
+      # - longname
+      # - sponsor
     end
 
     # map resource to name
@@ -48,6 +58,7 @@ module ASF
     # parse startdate
     def startdate
       return unless @startdate
+      # assume 15th (mid-month) if no day specified
       return Date.parse("#@startdate-15") if @startdate.length < 8
       Date.parse(@startdate)
     rescue ArgumentError
@@ -57,6 +68,7 @@ module ASF
     # parse enddate
     def enddate
       return unless @enddate
+      # assume 15th (mid-month) if no day specified
       return Date.parse("#@enddate-15") if @enddate.length < 8
       Date.parse(@enddate)
     rescue ArgumentError
@@ -93,9 +105,14 @@ module ASF
         podlings.search('podling').map do |node|
           @list << new(node)
         end
+        @mtime = File.mtime(podlings_xml)
       end
 
       @list
+    end
+
+    def self.mtime
+      @mtime
     end
 
     # find a podling by name
@@ -137,9 +154,63 @@ module ASF
       when 'log4cxx2'
         'log4cxx-dev@logging.apache.org'
       else
-        "dev@#{name}.apache.org"
+        "dev@#{name}.apache.org" if ASF::Mail.lists.include? "#{name}-dev"
       end
     end
+
+    # private mailing list associated with a given podling
+    def private_mail_list
+      if name == 'log4cxx2'
+        'private@logging.apache.org'
+      else
+        list = dev_mail_list
+        list && list.sub('dev', 'private')
+      end
+    end
+
+    # Is this a podling mailing list?
+    def mail_list?(list)
+      return true if _match_mailname?(list, name())
+      # Also check aliases
+      @resourceAliases.each {|name|
+        return true if _match_mailname?(list, name)
+      }
+      return false
+    end
+
+    # Match against new and old list types
+    def _match_mailname?(list, _name)
+      return true if list.start_with?("#{_name}-")
+      return true if list.start_with?("incubator-#{_name}-")
+    end
+
+    # Return the instance as a hash
+    def as_hash # might be confusing to use to_h here?
+      hash = {
+        name: @name,
+        status: status,
+        description: description,
+        mentors: mentors,
+        startdate: startdate,
+      }
+      hash[:enddate] = enddate if enddate
+      hash[:champion] = champion if champion
+
+      # Tidy up the reporting output
+      r = @reporting
+      if r.instance_of? Nokogiri::XML::Element
+        group = r['group']
+        hash[:reporting] = {
+          group: group
+        }
+        hash[:reporting][:text] = r.text if r.text.length > 0
+        hash[:reporting][:monthly] = r.text.split(/,\s*/) if r['monthly']
+      else
+        hash[:reporting] = r if r
+      end
+      hash
+    end
+
   end
 
   # more backwards compatibility

@@ -1,6 +1,6 @@
-require File.expand_path('../main.rb', __FILE__)
-
 require 'whimsy/asf/rack'
+
+require File.expand_path('../main.rb', __FILE__)
 
 # https://svn.apache.org/repos/infra/infrastructure/trunk/projects/whimsy/asf/rack.rb
 use ASF::Auth::MembersAndOfficers do |env|
@@ -14,5 +14,7 @@ use ASF::Auth::MembersAndOfficers do |env|
 end
 
 use ASF::HTTPS_workarounds
+
+use ASF::ETAG_Deflator_workaround
 
 run Sinatra::Application
