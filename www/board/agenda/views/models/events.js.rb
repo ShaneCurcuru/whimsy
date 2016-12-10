@@ -90,7 +90,18 @@ class Events
       localStorage.setItem("#{@@prefix}-master", @@master = @@timestamp)
       @@ondeck = localStorage.removeItem("#{@@prefix}-ondeck")
 
-      self.master()
+      if Server.session
+        self.master()
+      else
+        options = {credentials: 'include'}
+        request = Request.new("../session.json", options)
+        fetch(request).then do |response|
+          response.json().then do |json|
+            Server.session = json.session
+            self.master()
+          end
+        end
+      end
 
     elsif 
       @@ondeck == nil and @@master != @@timestamp and
@@ -154,7 +165,16 @@ class Events
     message = JSON.parse(data)
     self.log message
 
-    if @@subscriptions[message.type]
+    if message.type == :unauthorized
+      options = {credentials: 'include'}
+      request = Request.new("../session.json", options)
+      fetch(request).then do |response|
+        response.json().then do |json|
+          console.log json
+          Server.session = json.session
+        end
+      end
+    elsif @@subscriptions[message.type]
       @@subscriptions[message.type].each {|sub| sub(message)}
     end
 
